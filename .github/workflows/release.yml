@@ -1,0 +1,111 @@
+# Cuts a GitHub Release whenever a v*.*.* tag is pushed, build order step
+# 26 (original step 27), "Release workflow, v0.1.0". One job, verify,
+# re-runs the same five checks `make check` runs locally (ruff, ruff
+# format, mypy strict, the em dash gate, the full test suite with its
+# coverage floor, and the claim gate) against the exact tagged commit,
+# before a second job, release, ever runs. A release can only be cut from
+# a commit ci.yml already approved on push to master, in the normal case,
+# but a tag is a separate git object a person can point at any commit,
+# including one CI never saw; this job means that can never happen
+# silently here.
+#
+# Deliberately does not also build or push a container image. This
+# sandbox confirmed at build order step 18, by direct attempt against both
+# Docker Hub and GHCR, that its own container registry access is blocked
+# (see the Dockerfile's own header comment and docs/security.md's
+# deployment section); a GHCR push step written here would be exactly the
+# kind of unverified claim this project refuses to publish elsewhere.
+# Fly.io does not consume a pre-built registry image either way: `fly
+# deploy` builds straight from the committed Dockerfile, so no real
+# release-time consumer of a separately published image exists yet.
+#
+# gh release create is GitHub's own command line tool, preinstalled on
+# every GitHub hosted runner, authenticated by the GITHUB_TOKEN this
+# workflow's own permissions block grants directly. No third party action
+# and no extra secret, the same "no secret required for any job to go
+# green" rule ci.yml's own header states.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  # Identical to ci.yml's own top level env block, on purpose: a release
+  # is verified against the same pinned Postgres image and the same
+  # deterministic backends README.md and RESULTS.md were actually rendered
+  # under, never a newer image or a different backend a release workflow
+  # quietly started trusting on its own.
+  POSTGRES_IMAGE: "pgvector/pgvector:0.6.0-pg16"
+  POSTGRES_PASSWORD: groundwork_dev_password
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ${{ env.POSTGRES_IMAGE }}
+        env:
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-packages --dev --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy packages
+      - run: uv run python scripts/check_no_em_dash.py
+      - name: Create the test database
+        run: PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql -h localhost -U postgres -c "CREATE DATABASE groundwork_test;"
+      - name: Migrate the test database
+        working-directory: packages/api
+        env:
+          GROUNDWORK_DATABASE_URL: "postgresql+psycopg://postgres:${{ env.POSTGRES_PASSWORD }}@localhost:5432/groundwork_test"
+        run: uv run alembic upgrade head
+      - name: Run the test suite with the coverage floor enforced
+        run: uv run pytest --cov --cov-report=term-missing
+      - name: Create the dev database
+        run: PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql -h localhost -U postgres -c "CREATE DATABASE groundwork_dev;"
+      - name: Migrate the dev database
+        working-directory: packages/api
+        run: uv run alembic upgrade head
+      - name: Seed the demo workspaces
+        run: uv run python scripts/seed_demo_workspaces.py
+      - name: Check every published number against a fresh render
+        env:
+          GROUNDWORK_TOKENIZER_BACKEND: approximate
+          GROUNDWORK_EMBEDDING_BACKEND: tfidf
+          GROUNDWORK_RERANK_BACKEND: lexical
+          GROUNDWORK_FAITHFULNESS_BACKEND: lexical
+        run: uv run python scripts/check_published_numbers.py
+
+  release:
+    name: release
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes "Live demo: https://mekala27-45.github.io/groundwork/. Full evaluation report: RESULTS.md" \
+            --generate-notes

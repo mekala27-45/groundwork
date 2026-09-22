@@ -85,6 +85,12 @@ jobs:
           GROUNDWORK_DATABASE_URL: "postgresql+psycopg://postgres:${{ env.POSTGRES_PASSWORD }}@localhost:5432/groundwork_test"
         run: uv run alembic upgrade head
       - name: Run the test suite with the coverage floor enforced
+        # Same real bug ci.yml's test job's own equivalent step comment
+        # explains: without this, config.py's default (groundwork_dev)
+        # is what every requires_postgres test resolves to, and this job
+        # has not created that database yet at this point.
+        env:
+          GROUNDWORK_DATABASE_URL: "postgresql+psycopg://postgres:${{ env.POSTGRES_PASSWORD }}@localhost:5432/groundwork_test"
         run: uv run pytest --cov --cov-report=term-missing
       - name: Create the dev database
         run: PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql -h localhost -U postgres -c "CREATE DATABASE groundwork_dev;"

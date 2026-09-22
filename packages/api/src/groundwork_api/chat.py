@@ -2,12 +2,14 @@
 conversation, into a persisted Turn. Ties together retrieval
 (groundwork_retrieve.search_chunks, optionally reranked), generation
 (groundwork_generate.generate_answer, with its own extractive fallback),
-and independent verification (groundwork_verify.check_faithfulness and
-verify_citations) into the single call every path that produces a real
-answer goes through: packages/api/tests/test_isolation.py exercises this
-exact function to prove the workspace boundary holds end to end, not only
-at the retrieval query in isolation, and the /chat and /trace web pages
-(build order steps 22 and 23) call it directly.
+independent verification (groundwork_verify.check_faithfulness and
+verify_citations), and secondary quality scoring
+(groundwork_verify.score_reply_quality, never the faithfulness gate) into
+the single call every path that produces a real answer goes through:
+packages/api/tests/test_isolation.py exercises this exact function to
+prove the workspace boundary holds end to end, not only at the retrieval
+query in isolation, and the /chat and /trace web pages (build order steps
+22 and 23) call it directly.
 
 workspace_id is deliberately never a parameter here. It is derived once,
 by loading the Conversation row and reading conversation.workspace_id,
@@ -60,6 +62,7 @@ from groundwork_verify.faithfulness import (
     FaithfulnessScorer,
     check_faithfulness,
 )
+from groundwork_verify.quality import Judge, QualityScore, score_reply_quality
 
 
 class ConversationNotFoundError(ValueError):
@@ -154,6 +157,10 @@ def _serialize_citations(verifications: list[CitationVerification]) -> list[dict
     ]
 
 
+def _serialize_quality_score(score: QualityScore | None) -> dict[str, object] | None:
+    return score.model_dump() if score is not None else None
+
+
 async def ask(
     session: AsyncSession,
     *,
@@ -167,8 +174,9 @@ async def ask(
     reranker: Reranker | None = None,
     generator: Generator | None = None,
     scorer: FaithfulnessScorer | None = None,
+    judge: Judge | None = None,
 ) -> Turn:
-    """Retrieves, generates, verifies, and persists one Turn.
+    """Retrieves, generates, verifies, scores, and persists one Turn.
 
     Every retrieval and citation check this function performs is scoped to
     conversation.workspace_id, looked up fresh from the database rather
@@ -183,6 +191,16 @@ async def ask(
     view can show a reader what was retrieved and why it was judged not
     relevant enough, rather than hiding it behind an empty list that looks
     identical to a corpus with nothing in it at all.
+
+    Turn.judge_scores is section 10's secondary quality metric, written
+    from groundwork_verify.quality.score_reply_quality and kept entirely
+    separate from Turn.claims and Turn.citation_verifications, the
+    faithfulness gate's own columns: a low quality score never affects
+    faithfulness, a high one never excuses an unfaithful claim, and
+    nothing here computes a pass or fail from it. None, not a synthetic
+    number, when no LLM key is configured or the shared spend ledger is
+    already exhausted, which is what this sandbox actually returns on
+    every turn today.
     """
     settings = get_settings()
     resolved_top_k = top_k if top_k is not None else settings.final_k
@@ -233,6 +251,8 @@ async def ask(
         session, workspace_id=workspace_id, cited_chunks=cited_chunks
     )
 
+    quality_score = await score_reply_quality(question, generation.answer, judge=judge)
+
     turn = Turn(
         conversation_id=conversation_id,
         workspace_id=workspace_id,
@@ -244,6 +264,7 @@ async def ask(
         claims=_serialize_claims(faithfulness),
         citation_verifications=_serialize_citations(citation_verifications),
         extractive_fallback=generation.extractive_fallback,
+        judge_scores=_serialize_quality_score(quality_score),
         latency_ms=generation.latency_ms,
         cost_usd=generation.cost_usd,
     )

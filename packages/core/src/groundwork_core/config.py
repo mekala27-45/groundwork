@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_api_key: str | None = None
     judge_model: str | None = None
+    """The model groundwork_verify.quality.LiteLLMJudge calls to score
+    reply clarity and helpfulness, a secondary metric never used as the
+    faithfulness gate. Falls back to llm_model when unset, which still
+    works, just without the extra guarantee: setting this to a different
+    model than llm_model means the model that wrote an answer is never
+    also the model grading it, the same conflict of interest reasoning
+    groundwork_verify.faithfulness applies structurally by using an
+    independent NLI model rather than any LLM at all."""
 
     spend_ceiling_usd: float = 2.00
 

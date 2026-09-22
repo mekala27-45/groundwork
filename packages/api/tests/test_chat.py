@@ -20,6 +20,7 @@ from groundwork_api.models import (
 )
 from groundwork_core.ids import new_id
 from groundwork_generate.generate import ExtractiveGenerator, GenerationResult
+from groundwork_verify.quality import QualityScore
 
 pytestmark = pytest.mark.requires_postgres
 
@@ -57,6 +58,20 @@ class _RecordingGenerator:
     async def generate(self, question: str, chunks: list[Chunk]) -> GenerationResult:
         self.received_chunks = chunks
         return await self._inner.generate(question, chunks)
+
+
+class _StubJudge:
+    """Returns a fixed QualityScore with no network access, the same
+    recording-stub shape _RecordingGenerator uses, so ask()'s own wiring
+    (does the answer reach the judge, does the result land in
+    Turn.judge_scores) is provable independent of groundwork_verify's own
+    LiteLLMJudge tests."""
+
+    def __init__(self, result: QualityScore | None) -> None:
+        self._result = result
+
+    async def score(self, question: str, answer: str) -> QualityScore | None:
+        return self._result
 
 
 class _RecordingReranker:
@@ -343,3 +358,47 @@ async def test_ask_uses_the_requested_chunking_strategy(db_session: AsyncSession
 
     assert turn.retrieved_chunk_ids == [str(structure_chunk.id)]
     assert turn.chunking_strategy == ChunkStrategy.STRUCTURE
+
+
+async def test_ask_writes_judge_scores_from_the_provided_judge(db_session: AsyncSession) -> None:
+    """Turn.judge_scores comes from whatever Judge ask() is given, stored
+    as the plain dict a real caller (the /trace page) can render directly,
+    entirely separate from turn.claims and turn.citation_verifications,
+    the faithfulness gate's own columns."""
+    workspace, _ = await _seed_workspace_with_chunk(db_session, text="Sessions run fifty minutes.")
+    conversation = await _seed_conversation(db_session, workspace)
+    quality = QualityScore(clarity=4, helpfulness=5, rationale="Answers the question directly.")
+
+    turn = await ask(
+        db_session,
+        conversation_id=conversation.id,
+        question="How long is a session?",
+        strategy=ChunkStrategy.NAIVE,
+        embedder=_StubEmbedder(_vec(1.0, 0.0)),
+        generator=ExtractiveGenerator(),
+        judge=_StubJudge(quality),
+    )
+
+    assert turn.judge_scores == quality.model_dump()
+
+
+async def test_ask_leaves_judge_scores_none_with_no_judge_and_no_key(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real default in this sandbox: nothing passed for judge, and no
+    LLM key configured, so the secondary quality metric stays an honest
+    None rather than a fabricated score."""
+    monkeypatch.delenv("GROUNDWORK_LLM_API_KEY", raising=False)
+    workspace, _ = await _seed_workspace_with_chunk(db_session, text="Sessions run fifty minutes.")
+    conversation = await _seed_conversation(db_session, workspace)
+
+    turn = await ask(
+        db_session,
+        conversation_id=conversation.id,
+        question="How long is a session?",
+        strategy=ChunkStrategy.NAIVE,
+        embedder=_StubEmbedder(_vec(1.0, 0.0)),
+        generator=ExtractiveGenerator(),
+    )
+
+    assert turn.judge_scores is None

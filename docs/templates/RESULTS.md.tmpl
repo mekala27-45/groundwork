@@ -4,7 +4,9 @@ Every figure on this page is rendered by `scripts/check_published_numbers.py`
 from a live query against this repository's own database and
 `evalset/questions.yaml`. A number that cannot be recomputed this way
 does not appear here; see `packages/api/src/groundwork_api/claims.py`
-for exactly how each one is produced.
+for exactly how each one is produced. Every table below is rendered the
+same way, one markdown table string built from real rows, not typed in
+by hand and not summarized from them.
 
 ## Corpus
 
@@ -21,47 +23,186 @@ for exactly how each one is produced.
 Status: {{retrieval_metrics_status}}. Recall@3, recall@5, precision@5,
 and MRR, computed separately for naive versus structure aware chunking
 and with versus without reranking, against the golden evaluation set
-above. The harness itself is build order step 11; `scripts/run_eval.py`
-(build order step 20) is what actually runs it and persists an `EvalRun`
-row per workspace, configuration, and category. The full comparison
-table renders here at build order step 21, the commit immediately after
-this status first reads "computed".
+above, scored workspace by workspace since `EvalRun.workspace_id` is a
+required foreign key with no "every workspace at once" row. `category`
+of `all` means every scored category within that one workspace and
+configuration; the individual category rows below it are the same
+questions broken out. `out_of_scope` is excluded here by design, scored
+separately below instead, since it has no right answer chunk to compute
+recall against.
+
+{{retrieval_metrics_table}}
+
+Read the table for two comparisons: reranking on versus off within the
+same chunking strategy, and naive versus structure aware within the same
+reranking setting. Neither comparison is guaranteed to favor the same
+side in every category, and this run does not: look at each workspace's
+own `direct` and `boundary` rows side by side across configurations
+rather than trusting either comparison to hold everywhere. Nothing here
+is smoothed toward the result a portfolio piece would prefer to show;
+a configuration that loses in a given category is left in the table
+exactly as measured.
 
 ## Chunking strategy comparison
 
-Status: {{retrieval_metrics_status}}. Naive versus structure aware
-chunking, compared on the same metrics as the retrieval table above,
-with the boundary spanning question category broken out separately and
-reported honestly even where naive chunking wins or ties. Renders here
-alongside the retrieval metrics table at build order step 21.
+Status: {{retrieval_metrics_status}}. The `boundary` category alone,
+pulled out of the table above into its own view: the questions
+`scripts/build_eval_questions.py` built specifically to require pulling
+information that a naive fixed size window is more likely to split
+across two chunks, which structure aware chunking's header aware
+splitting is meant to keep together.
+
+{{boundary_comparison_table}}
 
 ## Faithfulness scorecard
 
-Status: {{red_team_status}}. Entailed, contradicted, and unsupported
-claim rates from the independent NLI faithfulness checker (build order
-step 13), contradicted counted separately from unsupported since the two
-mean different things to a reader deciding how much to trust the system.
-Renders here at build order step 21.
+Status: {{red_team_status}}. An independent NLI style checker
+(`packages/verify/src/groundwork_verify/faithfulness.py`, build order
+step 13, never the generation model grading its own output) split
+{{faithfulness_claim_count}} claims across {{turn_count}} turns into these three buckets:
+{{faithfulness_entailed_count}} entailed, {{faithfulness_contradicted_count}} contradicted,
+{{faithfulness_unsupported_count}} unsupported. Contradicted is counted
+separately from unsupported since the two mean different things to a
+reader deciding how much to trust the system: a contradicted claim
+actively disagrees with the source, an unsupported one simply is not
+backed by it.
+
+This scorecard carries a real limitation worth stating plainly rather
+than leaving a reader to assume a stronger result than what was
+measured. This sandbox has no reachable local model backend and no LLM
+key configured (see Limitations below), so every one of the turns
+scored above went through `ExtractiveGenerator`, not a real language
+model. `check_faithfulness`'s own `extractive_fallback` branch returns
+exactly one entailed claim, score 1.0, for the quoted chunk verbatim,
+by construction, every time that path runs; it never calls the real
+NLI or lexical scorer at all. So an entailed rate at or near 100% above
+is not evidence this system produces faithful free-form answers; it is
+the mechanical result of the extractive path trivially entailing its
+own verbatim quote. The real scorer is genuinely exercised by its own
+unit tests (`packages/verify/tests/test_faithfulness.py`, unskipped for
+its lexical backend) against constructed claim and chunk pairs, proving
+the checker itself works; it is simply never exercised end to end here
+against a real generated answer, since this environment cannot produce
+one.
 
 ## Workspace isolation
 
-Status: {{red_team_status}}. `test_workspace_isolation` (build order
-step 15), a synthetic worst case fixture built to make a scoping bug
-want to leak, plus a second, differently shaped probe against this
-build's real seeded content, both run for real by `scripts/run_eval.py`
-(build order step 20). Renders here at build order step 21.
+Status: {{red_team_status}}. {{workspace_isolation_pass_count}} of {{workspace_isolation_total_count}} passed.
+Two differently shaped proofs of the same property, not one test
+repeated. `test_workspace_isolation`
+(build order step 15, `packages/api/tests/test_isolation.py`) runs on
+every push and proves the boundary holds against a synthetic, worst
+case fixture built specifically to make a scoping bug want to leak.
+The suite scored here is a second, real data probe: each demo
+workspace's own real, on topic question, asked inside a conversation
+scoped to a different real workspace, using this build's actual seeded
+content and its actual resolved embedding backend, checking that no
+chunk belonging to the question's real source workspace is ever among
+what comes back.
 
 ## Injection red team and out of scope scoring
 
-Status: {{red_team_status}}. The injection defense test and the out of
-scope refusal scoring (build order steps 16 and 17), run for real by
+Status: {{red_team_status}}. Both suites run for real by
 `scripts/run_eval.py` (build order step 20) against every question in
-both categories, under both chunking strategies. Renders here at build
-order step 21.
+both categories, under both chunking strategies.
+
+**Injection**: {{injection_pass_count}} of {{injection_total_count}} passed.
+Each case is checked two ways, not one: did retrieval actually
+find the planted hidden instruction chunk (so a pass means the defense
+was actually exercised, not that nothing relevant was ever retrieved in
+the first place), and did the planted marker leak into the answer
+regardless. The withhold rather than quote defense (build order step
+16) is what this suite is actually scoring.
+
+**Out of scope**: {{out_of_scope_pass_count}} of {{out_of_scope_total_count}} passed.
+A pass requires no citation and the answer to exactly equal the refusal message
+(`groundwork_verify.refusal.is_out_of_scope_refusal`, section 11's own
+deterministic requirement, not a softer heuristic). The relevance gate
+this build relies on for refusal in place of a real LLM's own judgment
+(`Settings.relevance_threshold`, `groundwork_api.chat.ask`) compares the
+top retrieved chunk's cosine similarity to the query against a fixed
+threshold that was deliberately not tuned against this evaluation set.
+Read plainly rather than summarized: under this sandbox's deterministic
+tfidf embedding fallback, an out of scope question's top match and a
+genuinely in scope question's top match land in overlapping similarity
+ranges often enough that the threshold cannot reliably separate them,
+so `ExtractiveGenerator` confidently quotes a thematically adjacent but
+wrong passage instead of refusing. Every failing case below is a real
+question this environment's lexical backend genuinely could not tell
+apart from an in scope one, not a bug and not corrected by lowering the
+threshold until this one evaluation set happens to score better; a real
+embedding model or a configured LLM key closes this gap without any
+code change, and neither is available in this sandbox.
+
+{{out_of_scope_failures_table}}
 
 ## Limitations
 
-This section is filled in at build order step 21, once every result
-above is in hand, and names what was cut or substituted along the way,
-including `evalset/public_domain/PROVENANCE.md`'s documented departure
-from the original public domain document requirement.
+Stated here in the open rather than left for a reader to discover, in
+the same spirit as the out of scope result above: a system that will
+not admit what it cannot yet do is less trustworthy than one that says
+so plainly.
+
+**No reachable model backend in this sandbox.** `huggingface.co` is
+unreachable through this environment's egress proxy for the entire
+build, confirmed directly and cached by
+`groundwork_core.network.can_reach_huggingface`. Every "auto: probe
+once, cache, fall back if unreachable" backend in this project
+(embeddings, reranking, faithfulness NLI, the injection defense's
+extraction path) resolved to its deterministic offline fallback for
+every real run behind the numbers above, never the real local model.
+The cross encoder reranker and the cross encoder faithfulness scorer
+are both covered by their own unit tests against constructed inputs,
+proving the code itself is correct, but neither has ever actually run
+against a real embedding in this environment. The same holds for
+generation and the secondary quality judge: no LLM API key is
+configured here, so `LiteLLMGenerator` and `LiteLLMJudge` have never
+executed for real either, only `ExtractiveGenerator`, and
+`is_out_of_scope_refusal`'s exact string match against a real free form
+LLM refusal is an unmeasured gap for the same reason. This project also
+never implemented or measured a third, paid API based embedding backend
+alongside the two that exist (`local_model` and the deterministic
+`tfidf` fallback); whether a hosted embedding API would close the out of
+scope gap above without a self hosted model is unmeasured here too.
+
+**The out of scope refusal rate above is a real, unflattering, and
+unfixed result.** See the section above for the full explanation. It is
+published as measured rather than tuned after the fact, deliberately.
+
+**The faithfulness scorecard above is trivial by construction in this
+sandbox.** See the Faithfulness scorecard section above; the checker
+itself is real and independently tested, but has not been exercised
+end to end against a real generated answer here.
+
+**The second demo workspace's document is not the government
+publication the original build spec called for.** Three candidate
+downloads (an SBA guide, a NIST publication, an IRS publication) all
+failed against this sandbox's network allowlist. Original content was
+written instead and is disclosed in full, including why reproducing a
+real document from memory was rejected as worse than substituting,
+in `evalset/public_domain/PROVENANCE.md`.
+
+**The Docker and Fly.io deployment files are correct by construction,
+not verified by a real build.** This sandbox's container registry
+access (Docker Hub, GitHub Container Registry) returns a permissions
+error on direct attempt, confirmed rather than assumed. `Dockerfile`,
+`fly.toml`, `docker-compose.yml`, and `.dockerignore` apply lessons
+already learned the hard way in earlier projects in this series (working
+directory and editable install path consistency, avoiding a uid 1000
+collision), but no image built from them has actually run in this
+environment.
+
+**Fly.io's always free compute tier no longer exists**, confirmed
+against Fly's own current documentation while writing `fly.toml`. Only
+a trial period followed by usage based billing remains. This build's
+locked "free tier only" hosting constraint is revised in fact, not in
+the rule that produced it: Neon's free Postgres plan, GitHub Pages, and
+GitHub Actions on a public repository all remain genuinely free; Fly.io
+compute does not, as of this build.
+
+**Reproducibility was checked, not assumed.** The full pipeline
+(reseed, rebuild the evaluation set, run the harness) was run more than
+once against freshly generated content during this build, and produced
+the same pass and fail outcomes and near identical metrics each time,
+the deterministic offline fallback backends being exactly that,
+deterministic.

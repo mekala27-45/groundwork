@@ -75,10 +75,15 @@ whether this run exercised the extractive path or a real LLM, rather than
 forcing one or the other.
 
 Safe to rerun: it appends fresh EvalRun and RedTeamResult rows rather than
-updating rows in place, matching both models' own "one row per execution"
-docstrings, so the /eval dashboard's "most recent run" queries
-(ORDER BY run_at DESC) always reflect this run without deleting the
-history of prior ones.
+updating rows in place. Every row one invocation writes, across both
+tables, shares one run_id, generated once below rather than per row, so
+a later query (claims.py's build_manifest, eventually the /eval
+dashboard) can ask for exactly the most recent real run's numbers rather
+than an ever accumulating mix of every run this script has ever
+produced. See EvalRun.run_id's own docstring for why this exists: the
+very first rerun after this script's first real use hit exactly that
+problem, both tables holding two runs' worth of rows with no column to
+tell them apart.
 """
 
 from __future__ import annotations
@@ -106,6 +111,7 @@ from groundwork_api.models import (
     Workspace,
 )
 from groundwork_api.models import ChunkStrategy as DbChunkStrategy
+from groundwork_core.ids import new_id
 from groundwork_ingest.fixtures import INJECTION_TEST_MARKER
 from groundwork_retrieve.embeddings import resolve_embedding_backend
 from groundwork_retrieve.evaluate import EvalQuestionRecord, evaluate_all_configurations
@@ -148,7 +154,7 @@ def _as_records(raw_questions: list[RawQuestion]) -> list[EvalQuestionRecord]:
 
 
 async def _run_retrieval_metrics(
-    session: AsyncSession, raw_questions: list[RawQuestion]
+    session: AsyncSession, raw_questions: list[RawQuestion], *, run_id: UUID
 ) -> list[EvalRun]:
     records = _as_records(raw_questions)
     by_workspace: dict[UUID, list[EvalQuestionRecord]] = defaultdict(list)
@@ -163,6 +169,7 @@ async def _run_retrieval_metrics(
         for result in await evaluate_all_configurations(session, questions=workspace_questions):
             used_reranking = result.config_label.endswith("+rerank")
             run = EvalRun(
+                run_id=run_id,
                 embedding_backend=embedding_backend,
                 rerank_backend=rerank_backend if used_reranking else "none",
                 config_label=result.config_label,
@@ -194,7 +201,7 @@ async def _ask_in_fresh_conversation(
 
 
 async def _run_out_of_scope_suite(
-    session: AsyncSession, raw_questions: list[RawQuestion]
+    session: AsyncSession, raw_questions: list[RawQuestion], *, run_id: UUID
 ) -> list[RedTeamResult]:
     out_of_scope = [q for q in raw_questions if q["category"] == "out_of_scope"]
     results: list[RedTeamResult] = []
@@ -210,10 +217,16 @@ async def _run_out_of_scope_suite(
                 turn.answer, cited_chunk_count=len(turn.citation_verifications)
             )
             result = RedTeamResult(
+                run_id=run_id,
                 suite="out_of_scope",
                 case_id=f"{strategy.value}: {q['question']}",
                 passed=passed,
-                detail=None if passed else f"answer={turn.answer!r}",
+                # The plain answer text, not a repr: claims.py's own
+                # out-of-scope failures table (build order step 21) reads
+                # this back to show the real, wrongly-treated-as-relevant
+                # passage, and a repr's escaped quotes and backslashes
+                # would only make that harder to read for no benefit.
+                detail=None if passed else turn.answer,
             )
             session.add(result)
             results.append(result)
@@ -221,7 +234,7 @@ async def _run_out_of_scope_suite(
 
 
 async def _run_injection_suite(
-    session: AsyncSession, raw_questions: list[RawQuestion]
+    session: AsyncSession, raw_questions: list[RawQuestion], *, run_id: UUID
 ) -> list[RedTeamResult]:
     injection_questions = [q for q in raw_questions if q["category"] == "injection"]
     results: list[RedTeamResult] = []
@@ -239,10 +252,11 @@ async def _run_injection_suite(
             if not retrieved:
                 detail = "nothing retrieved, the defense was never exercised"
             elif leaked:
-                detail = f"marker leaked: {turn.answer!r}"
+                detail = f"marker leaked: {turn.answer}"
             else:
                 detail = f"extractive_fallback={turn.extractive_fallback}"
             result = RedTeamResult(
+                run_id=run_id,
                 suite="injection",
                 case_id=f"{strategy.value}: {q['question']}",
                 passed=passed,
@@ -264,6 +278,8 @@ async def _run_workspace_isolation_suite(
     session: AsyncSession,
     raw_questions: list[RawQuestion],
     workspace_by_name: dict[str, Workspace],
+    *,
+    run_id: UUID,
 ) -> list[RedTeamResult]:
     probes = [
         (
@@ -312,6 +328,7 @@ async def _run_workspace_isolation_suite(
         leaked_ids = source_chunk_ids.intersection(turn.retrieved_chunk_ids)
         passed = not leaked_ids
         result = RedTeamResult(
+            run_id=run_id,
             suite="workspace_isolation",
             case_id=f"{source_name!r} question asked inside {target_name!r}",
             passed=passed,
@@ -366,21 +383,23 @@ def _print_red_team_report(suite_name: str, results: list[RedTeamResult]) -> Non
 
 async def main() -> None:
     async with session_scope() as session:
+        run_id = new_id()
         raw_questions = _load_questions()
 
         workspaces = (await session.execute(select(Workspace))).scalars().all()
         workspace_by_name = {w.name: w for w in workspaces}
         workspace_name_by_id = {w.id: w.name for w in workspaces}
 
-        eval_runs = await _run_retrieval_metrics(session, raw_questions)
-        out_of_scope_results = await _run_out_of_scope_suite(session, raw_questions)
-        injection_results = await _run_injection_suite(session, raw_questions)
+        eval_runs = await _run_retrieval_metrics(session, raw_questions, run_id=run_id)
+        out_of_scope_results = await _run_out_of_scope_suite(session, raw_questions, run_id=run_id)
+        injection_results = await _run_injection_suite(session, raw_questions, run_id=run_id)
         isolation_results = await _run_workspace_isolation_suite(
-            session, raw_questions, workspace_by_name
+            session, raw_questions, workspace_by_name, run_id=run_id
         )
 
         await session.commit()
 
+        print(f"run_id={run_id}")
         print(
             f"embedding_backend={resolve_embedding_backend()} rerank_backend={resolve_rerank_backend()}"
         )

@@ -175,6 +175,18 @@ class EvalRun(SQLModel, table=True):
     __tablename__ = "eval_run"
 
     id: UUID = Field(default_factory=new_id, primary_key=True)
+    run_id: UUID = Field(index=True)
+    """One shared value across every EvalRun and RedTeamResult row a
+    single scripts/run_eval.py invocation writes (generated once, at the
+    top of that script's main(), never per row), so a later query can
+    ask for exactly one real run's numbers rather than an
+    ever-accumulating mix of however many times the script has ever been
+    run. Added after build order step 20's first real run: nothing
+    before that had ever written a second EvalRun row against the same
+    demo data, so nothing had ever needed to tell two runs apart, until
+    scripts/seed_demo_workspaces.py's own workspace reset bug (see that
+    script's docstring) forced a second real run and the rows from both
+    landed in the same table with no way to separate them."""
     run_at: datetime = Field(default_factory=_utcnow)
     embedding_backend: str
     rerank_backend: str
@@ -197,6 +209,9 @@ class RedTeamResult(SQLModel, table=True):
     __tablename__ = "red_team_result"
 
     id: UUID = Field(default_factory=new_id, primary_key=True)
+    run_id: UUID = Field(index=True)
+    """Shared with EvalRun.run_id, same value, same reasoning: see that
+    field's own docstring."""
     run_at: datetime = Field(default_factory=_utcnow)
     suite: str
     """'injection', 'out_of_scope', or 'workspace_isolation'."""

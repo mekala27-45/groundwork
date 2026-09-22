@@ -12,6 +12,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from groundwork_api.models import EvalRun, RedTeamResult, Workspace
+from groundwork_core.ids import new_id
 
 pytestmark = pytest.mark.requires_postgres
 
@@ -34,6 +35,7 @@ async def test_list_eval_runs_returns_a_seeded_run(
 ) -> None:
     workspace = await _seed_workspace(db_session)
     run = EvalRun(
+        run_id=new_id(),
         embedding_backend="tfidf",
         rerank_backend="lexical",
         config_label="naive+no_rerank",
@@ -53,6 +55,7 @@ async def test_list_eval_runs_returns_a_seeded_run(
     assert response.status_code == 200
     body = response.json()
     assert len(body) == 1
+    assert body[0]["run_id"] == str(run.run_id)
     assert body[0]["config_label"] == "naive+no_rerank"
     assert body[0]["workspace_id"] == str(workspace.id)
     assert body[0]["n_questions"] == 45
@@ -67,7 +70,9 @@ async def test_list_red_team_results_is_empty_with_nothing_seeded(client: AsyncC
 async def test_list_red_team_results_returns_a_seeded_row(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    result = RedTeamResult(suite="injection", case_id="case-1", passed=True, detail=None)
+    result = RedTeamResult(
+        run_id=new_id(), suite="injection", case_id="case-1", passed=True, detail=None
+    )
     db_session.add(result)
     await db_session.commit()
 
@@ -76,6 +81,7 @@ async def test_list_red_team_results_returns_a_seeded_row(
     assert response.status_code == 200
     body = response.json()
     assert len(body) == 1
+    assert body[0]["run_id"] == str(result.run_id)
     assert body[0]["suite"] == "injection"
     assert body[0]["case_id"] == "case-1"
     assert body[0]["passed"] is True

@@ -37,7 +37,16 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from groundwork_api.db import dispose_engine, session_scope
-from groundwork_api.models import Chunk, Document, ExtractionMethod, Workspace
+from groundwork_api.models import (
+    Chunk,
+    Conversation,
+    Document,
+    EvalQuestion,
+    EvalRun,
+    ExtractionMethod,
+    Turn,
+    Workspace,
+)
 from groundwork_ingest.extract import extract_pdf
 from groundwork_ingest.fixtures import INJECTION_TEST_MARKER
 from groundwork_retrieve.index import index_document
@@ -53,15 +62,34 @@ MERIDIAN_FILES = ["methodology.pdf", "packages.pdf", "faq.pdf", "onboarding.pdf"
 
 async def _reset_workspace(session: AsyncSession, name: str, description: str) -> Workspace:
     """Deletes any workspace with this name and everything scoped to it,
-    then inserts a fresh row. Chunk and Document both carry workspace_id
-    or cascade from it, so cleanup goes narrowest table first to respect
-    the foreign keys without relying on ON DELETE CASCADE being present."""
+    then inserts a fresh row. Every table models.py's own module docstring
+    lists as workspace scoped (Turn and Conversation included, both
+    denormalized the same way Chunk is) is cleaned up here, in the exact
+    dependency order, children first, that
+    groundwork_api.routers.workspaces.delete_workspace already uses and
+    already has a real end to end test for: this function is that
+    same cleanup, not an independently maintained copy of it that could
+    quietly drift out of sync.
+
+    A real gap this session found the hard way, not a hypothetical:
+    run_eval.py (build order step 20) was the first thing in this build
+    to ever create real Conversation and Turn rows against these three
+    demo workspaces, and the very next reseed after that failed outright
+    with a foreign key violation, "conversation_workspace_id_fkey", since
+    this function had never deleted either table. Fixed here rather than
+    only in the one run that happened to hit it, since every future
+    reseed after any real chat activity would fail the identical way.
+    """
     existing = (
         (await session.execute(select(Workspace).where(Workspace.name == name))).scalars().all()
     )
     for old in existing:
+        await session.execute(delete(Turn).where(Turn.workspace_id == old.id))
+        await session.execute(delete(Conversation).where(Conversation.workspace_id == old.id))
         await session.execute(delete(Chunk).where(Chunk.workspace_id == old.id))
         await session.execute(delete(Document).where(Document.workspace_id == old.id))
+        await session.execute(delete(EvalQuestion).where(EvalQuestion.workspace_id == old.id))
+        await session.execute(delete(EvalRun).where(EvalRun.workspace_id == old.id))
         await session.delete(old)
     await session.flush()
 

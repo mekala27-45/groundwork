@@ -86,6 +86,7 @@ class TurnOut(StrictModel):
 
 class EvalRunOut(StrictModel):
     id: UUID
+    run_id: UUID
     run_at: datetime
     embedding_backend: str
     rerank_backend: str
@@ -101,6 +102,7 @@ class EvalRunOut(StrictModel):
 
 class RedTeamResultOut(StrictModel):
     id: UUID
+    run_id: UUID
     run_at: datetime
     suite: str
     case_id: str

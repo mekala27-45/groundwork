@@ -7,8 +7,11 @@ dependency once, cache the result for the process lifetime, and fall back
 to the deterministic local implementation if the real one is unreachable.
 This is the same shape as day 1's local-vs-docker sandbox backend and day
 4's Meta-credentials-vs-simulator backend, applied here to embeddings,
-reranking and faithfulness scoring. Setting a variable explicitly to
-"local_model" or "lexical" overrides the probe.
+reranking, faithfulness scoring, and chunk token counting
+(groundwork_chunk.tokenize: tiktoken's cl100k_base ranks are themselves a
+network fetch on first use, not a bundled file). Setting a variable
+explicitly to "local_model", "lexical" or "tiktoken" / "approximate"
+overrides the probe.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 EmbeddingBackendChoice = Literal["auto", "local_model", "tfidf"]
 RerankBackendChoice = Literal["auto", "local_model", "lexical", "none"]
 FaithfulnessBackendChoice = Literal["auto", "local_model", "lexical"]
+TokenizerBackendChoice = Literal["auto", "tiktoken", "approximate"]
 
 
 class Settings(BaseSettings):
@@ -35,6 +39,7 @@ class Settings(BaseSettings):
     embedding_backend: EmbeddingBackendChoice = "auto"
     rerank_backend: RerankBackendChoice = "auto"
     faithfulness_backend: FaithfulnessBackendChoice = "auto"
+    tokenizer_backend: TokenizerBackendChoice = "auto"
 
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
     reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"

@@ -218,3 +218,14 @@ class RedTeamResult(SQLModel, table=True):
     case_id: str
     passed: bool
     detail: str | None = None
+    turn_id: UUID | None = Field(default=None, foreign_key="turn.id", index=True)
+    """Every red-team probe already produces a real Turn, one per case, via
+    _ask_in_fresh_conversation() in scripts/run_eval.py: the question was
+    actually asked, retrieval actually ran, an answer was actually
+    generated. Before this field, that Turn was thrown away the moment the
+    pass/fail check read it, so a failure here could be reported but never
+    inspected: section 11 requires "every failure linked to its full trace
+    in the web app's /trace view", and there was no way to find which Turn
+    a given failure even was. Nullable because it is backfilled by a
+    migration that cannot invent turn ids for rows written before this
+    column existed; every row written from this commit forward sets it."""

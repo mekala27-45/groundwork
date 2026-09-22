@@ -1,4 +1,4 @@
-type Status = "pass" | "fail" | "warn" | "neutral";
+export type Status = "pass" | "fail" | "warn" | "neutral";
 
 const STATUS_CLASSES: Record<Status, string> = {
   pass: "status-pass border-[var(--color-success)]/40 bg-[var(--color-success)]/10",

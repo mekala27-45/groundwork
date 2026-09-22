@@ -87,7 +87,7 @@ async def _workspace_names(session: AsyncSession) -> dict[UUID, str]:
     return {workspace.id: workspace.name for workspace in result.scalars().all()}
 
 
-async def _latest_eval_run_id(session: AsyncSession) -> UUID | None:
+async def latest_eval_run_id(session: AsyncSession) -> UUID | None:
     """The run_id every row scripts/run_eval.py's most recent invocation
     wrote to EvalRun shares, or None before it has ever run. Every query
     below that reads EvalRun rows for publication filters to this value
@@ -102,8 +102,8 @@ async def _latest_eval_run_id(session: AsyncSession) -> UUID | None:
     return result.scalars().first()
 
 
-async def _latest_red_team_run_id(session: AsyncSession) -> UUID | None:
-    """Same reasoning as _latest_eval_run_id, against RedTeamResult's own
+async def latest_red_team_run_id(session: AsyncSession) -> UUID | None:
+    """Same reasoning as latest_eval_run_id, against RedTeamResult's own
     run_id column instead. The two tables are written by the same script
     invocation and so share the same value in practice, but are looked up
     independently here rather than one being assumed from the other,
@@ -292,10 +292,10 @@ async def build_manifest(session: AsyncSession) -> dict[str, Any]:
     manifest["red_team_status"] = "computed" if red_team_result_count else NOT_YET_RUN
 
     workspace_names = await _workspace_names(session)
-    latest_eval_run_id = await _latest_eval_run_id(session)
+    current_eval_run_id = await latest_eval_run_id(session)
     eval_runs_statement = select(EvalRun)
-    if latest_eval_run_id is not None:
-        eval_runs_statement = eval_runs_statement.where(col(EvalRun.run_id) == latest_eval_run_id)
+    if current_eval_run_id is not None:
+        eval_runs_statement = eval_runs_statement.where(col(EvalRun.run_id) == current_eval_run_id)
     eval_runs = list((await session.execute(eval_runs_statement)).scalars().all())
     manifest["retrieval_metrics_table"] = _format_retrieval_metrics_table(
         eval_runs, workspace_names
@@ -321,15 +321,15 @@ async def build_manifest(session: AsyncSession) -> dict[str, Any]:
     manifest["faithfulness_contradicted_count"] = faithfulness_counts["contradicted"]
     manifest["faithfulness_unsupported_count"] = faithfulness_counts["unsupported"]
 
-    latest_red_team_run_id = await _latest_red_team_run_id(session)
-    red_team_pass_counts = await _red_team_pass_counts(session, run_id=latest_red_team_run_id)
+    current_red_team_run_id = await latest_red_team_run_id(session)
+    red_team_pass_counts = await _red_team_pass_counts(session, run_id=current_red_team_run_id)
     for suite in RED_TEAM_SUITES:
         passed, total = red_team_pass_counts[suite]
         manifest[f"{suite}_pass_count"] = passed
         manifest[f"{suite}_total_count"] = total
 
     manifest["out_of_scope_failures_table"] = await _out_of_scope_failures_table(
-        session, run_id=latest_red_team_run_id
+        session, run_id=current_red_team_run_id
     )
 
     return manifest

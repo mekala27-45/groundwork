@@ -61,7 +61,7 @@ async def test_build_manifest_reports_not_yet_run_before_any_eval_run(
     # it is still real and present even against an empty database.
     assert manifest["eval_question_count"] == 45
     # No EvalRun or RedTeamResult row means no run_id to look up either,
-    # the None branch _latest_eval_run_id/_latest_red_team_run_id take;
+    # the None branch latest_eval_run_id/latest_red_team_run_id take;
     # the tables built from them still render something readable rather
     # than an empty header.
     assert "No EvalRun rows yet" in manifest["retrieval_metrics_table"]

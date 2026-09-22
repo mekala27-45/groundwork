@@ -120,6 +120,7 @@ class RedTeamResultOut(StrictModel):
     case_id: str
     passed: bool
     detail: str | None
+    turn_id: UUID | None
 
 
 class ErrorOut(StrictModel):

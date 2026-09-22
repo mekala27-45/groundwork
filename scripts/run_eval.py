@@ -227,6 +227,7 @@ async def _run_out_of_scope_suite(
                 # passage, and a repr's escaped quotes and backslashes
                 # would only make that harder to read for no benefit.
                 detail=None if passed else turn.answer,
+                turn_id=turn.id,
             )
             session.add(result)
             results.append(result)
@@ -261,6 +262,7 @@ async def _run_injection_suite(
                 case_id=f"{strategy.value}: {q['question']}",
                 passed=passed,
                 detail=detail,
+                turn_id=turn.id,
             )
             session.add(result)
             results.append(result)
@@ -333,6 +335,7 @@ async def _run_workspace_isolation_suite(
             case_id=f"{source_name!r} question asked inside {target_name!r}",
             passed=passed,
             detail=None if passed else f"leaked source chunk ids: {sorted(leaked_ids)}",
+            turn_id=turn.id,
         )
         session.add(result)
         results.append(result)

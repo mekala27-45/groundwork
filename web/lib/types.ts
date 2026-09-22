@@ -111,6 +111,7 @@ export interface RedTeamResultOut {
   case_id: string;
   passed: boolean;
   detail: string | null;
+  turn_id: string | null;
 }
 
 export interface ErrorOut {

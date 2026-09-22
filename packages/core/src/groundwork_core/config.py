@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     """Below this fraction of extractable-characters-per-page-area, a page
     is treated as scanned and routed to the OCR fallback."""
 
-    relevance_threshold: float = 0.08
+    relevance_threshold: float = 0.15
     """Below this cosine similarity between a query and the single most
     relevant chunk retrieval found, groundwork_api.chat.ask treats
     retrieval as having found nothing usable and answers with the same
@@ -71,14 +71,29 @@ class Settings(BaseSettings):
     own that retrieved passages do not answer the question, only exists
     when a real model is configured at all.
 
-    A provisional default, deliberately conservative (low), chosen before
-    any real measurement existed. build order step 20 runs the real 45
-    question eval set through this gate and reports, honestly, in
-    RESULTS.md and docs/security.md, how well this specific number
-    separates the out_of_scope category from every question the documents
-    actually answer under whichever embedding backend this environment
-    resolves to, and revises it here if the real numbers call for it,
-    rather than leaving an untested guess in place and asserting it works.
+    Measured, not guessed, against the real 45 question eval set under
+    this environment's actual embedding backend (tfidf: huggingface.co is
+    unreachable here, so BAAI/bge-small-en-v1.5 was never in the running).
+    That measurement's honest conclusion: lexical cosine similarity does
+    not cleanly separate out_of_scope questions from genuinely answerable
+    ones. Direct category top-1 similarity ranged 0.1455 to 0.5113;
+    out_of_scope ranged 0.1612 to 0.4451, almost the same span. A
+    question like "what is data leakage, as defined in the glossary"
+    scores low because its wording barely overlaps the source chunk's,
+    not because it is off topic, while an out_of_scope question sharing
+    generic domain vocabulary ("the guide", "recommend", "training") with
+    the corpus can score higher than a real question does. This value is
+    deliberately not tuned to maximize this build's own out_of_scope pass
+    rate on that specific 45 question set, which would be fitting the
+    threshold to the eval rather than measuring against it: it sits just
+    above where the most degenerate mismatches land (near zero or
+    negative similarity, several of the injection category's off topic
+    phrasings included) and leaves the genuinely ambiguous middle
+    unresolved. RESULTS.md and docs/security.md report the real,
+    honestly unimpressive out_of_scope pass rate this produces, and name
+    a real embedding model or a real LLM key, either one, as what
+    actually closes this gap, since both replace lexical overlap with an
+    actual semantic or generative judgment this sandbox cannot make.
     """
 
     log_level: str = "INFO"

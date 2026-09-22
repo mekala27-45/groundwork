@@ -1,0 +1,219 @@
+# Six named jobs, the same CI pipeline shape days 1 to 4 of this build
+# series settled on, applied here to what this specific project actually
+# needs checked: lint, typecheck, the em dash gate, the test suite against
+# a real Postgres with pgvector (never sqlite standing in for it), the
+# claim gate that catches a hand typed number in README.md or RESULTS.md,
+# and the web app build, which starts building for real the moment
+# build order steps 22 to 25 add a web/package.json and does nothing
+# before that rather than failing on a directory that does not exist yet.
+#
+# No secret is required for any job to go green. This build's own hard
+# constraint, designing for a missing LLM key and a missing embedding API
+# key from the first commit, means every job below runs exactly as this
+# project's own dev sandbox ran it: no GROUNDWORK_LLM_API_KEY is set
+# anywhere in this file, so every real-model test stays correctly skipped
+# with a named reason, the same way it skips locally with no key
+# configured, rather than failing on a missing secret nobody is meant to
+# add to a portfolio repository's CI.
+#
+# Actions are pinned two different ways on purpose. actions/checkout and
+# actions/setup-node are maintained by GitHub itself, so a floating major
+# version tag is the low risk, low maintenance choice. astral-sh/setup-uv
+# is a third party action, so it is pinned to a specific, verified commit
+# SHA with the version it resolves to as a trailing comment, the stronger
+# guarantee for the one action in this file that is not GitHub's own.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The exact Postgres and pgvector versions this project was built and
+  # validated against locally (config.py's own settings docstring says so;
+  # confirmed directly against this build's own database with `SELECT
+  # extversion FROM pg_extension WHERE extname='vector'`), not merely the
+  # newest tag available, so a CI failure here means something this
+  # project actually depends on changed, not an unrelated upstream bump.
+  POSTGRES_IMAGE: "pgvector/pgvector:0.6.0-pg16"
+  POSTGRES_PASSWORD: groundwork_dev_password
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-packages --dev --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-packages --dev --locked
+      - run: uv run mypy packages
+
+  em-dash:
+    name: em-dash
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-packages --dev --locked
+      - run: uv run python scripts/check_no_em_dash.py
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    # No backend is pinned here, deliberately, unlike the claims job below.
+    # This runner has real internet access, so the "auto" default this
+    # project ships everywhere actually gets to probe huggingface.co for
+    # real and, wherever it succeeds, exercises the real embedding,
+    # reranking, and faithfulness models instead of their offline
+    # fallbacks, the same auto probe behavior a contributor's own
+    # internet-connected machine would see. Every test that depends on
+    # which way that probe goes already controls it explicitly, per test,
+    # with its own monkeypatch (see packages/retrieve/tests/test_embeddings.py
+    # for the shape), so nothing here needs to force a specific backend for
+    # the suite to pass either way.
+    services:
+      postgres:
+        image: ${{ env.POSTGRES_IMAGE }}
+        env:
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-packages --dev --locked
+      - name: Create the test database
+        run: PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql -h localhost -U postgres -c "CREATE DATABASE groundwork_test;"
+      - name: Migrate the test database
+        working-directory: packages/api
+        env:
+          GROUNDWORK_DATABASE_URL: "postgresql+psycopg://postgres:${{ env.POSTGRES_PASSWORD }}@localhost:5432/groundwork_test"
+        run: uv run alembic upgrade head
+      - name: Run the test suite with the coverage floor enforced
+        run: uv run pytest --cov --cov-report=term-missing
+
+  claims:
+    name: claims
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ${{ env.POSTGRES_IMAGE }}
+        env:
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Pinned, not "auto", and this is the one job in this file where that
+      # is load bearing rather than a style choice. The document and chunk
+      # counts already committed in README.md were computed under exactly
+      # these deterministic fallbacks, the only backends reachable from the
+      # sandbox that built this project. Pinning them here means this job
+      # reproduces those specific committed numbers on every run, rather
+      # than passing or failing depending on whether a given runner's
+      # network happens to reach huggingface.co that day. Re-deriving
+      # README.md and RESULTS.md under a real embedding model or a real LLM
+      # key, whenever one is available, is a separate, deliberate, manual
+      # re-run of scripts/seed_demo_workspaces.py and scripts/run_eval.py
+      # followed by `make claims-write`, exactly as CONTRIBUTING.md
+      # describes, never something this job decides on its own by whatever
+      # it happens to reach.
+      GROUNDWORK_TOKENIZER_BACKEND: approximate
+      GROUNDWORK_EMBEDDING_BACKEND: tfidf
+      GROUNDWORK_RERANK_BACKEND: lexical
+      GROUNDWORK_FAITHFULNESS_BACKEND: lexical
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-packages --dev --locked
+      - name: Create the dev database
+        run: PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql -h localhost -U postgres -c "CREATE DATABASE groundwork_dev;"
+      - name: Migrate the dev database
+        working-directory: packages/api
+        run: uv run alembic upgrade head
+      - name: Seed the demo workspaces
+        run: uv run python scripts/seed_demo_workspaces.py
+      - name: Check every published number against a fresh render
+        run: uv run python scripts/check_published_numbers.py
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check whether the web app exists yet
+        id: probe
+        run: |
+          if [ -f web/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v7
+        if: steps.probe.outputs.exists == 'true'
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: web
+        run: npm ci
+      - name: Type check
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: web
+        run: npm run typecheck --if-present
+      - name: Lint
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: web
+        run: npm run lint --if-present
+      - name: Build the static export
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: web
+        run: npm run build
+      - name: Not built yet
+        if: steps.probe.outputs.exists == 'false'
+        run: |
+          echo "web/ does not exist yet (build order steps 22 to 25)."
+          echo "This job starts building and type checking it automatically the moment web/package.json lands, with no change to this workflow required."

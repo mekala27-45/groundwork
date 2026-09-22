@@ -50,6 +50,12 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
+        # A literal image tag, not ${{ env.POSTGRES_IMAGE }}: GitHub Actions
+        # resolves jobs.<job_id>.services before the job's own env context
+        # exists, so an env reference here fails workflow validation outright
+        # ("Unrecognized named-value: 'env'"), the same real bug ci.yml's own
+        # equivalent fix comment explains, discovered only once this
+        # workflow ran for real against a real GitHub remote.
         image: "pgvector/pgvector:0.6.0-pg16"
         env:
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
@@ -87,6 +93,24 @@ jobs:
         run: uv run alembic upgrade head
       - name: Seed the demo workspaces
         run: uv run python scripts/seed_demo_workspaces.py
+      - name: Build the evaluation question set
+        # Same real bug ci.yml's claims job hit and its own equivalent
+        # step comment explains: every reseed generates fresh chunk ids,
+        # so a previously committed evalset/questions.yaml no longer
+        # resolves against this run's own seeded data without rebuilding
+        # it first.
+        run: uv run python scripts/build_eval_questions.py
+      - name: Run the evaluation harness
+        # Same real bug ci.yml's claims job hit: without a real
+        # evaluation run, every EvalRun and RedTeamResult dependent
+        # number reports NOT_YET_RUN and can never match the real
+        # committed README.md and RESULTS.md.
+        env:
+          GROUNDWORK_TOKENIZER_BACKEND: approximate
+          GROUNDWORK_EMBEDDING_BACKEND: tfidf
+          GROUNDWORK_RERANK_BACKEND: lexical
+          GROUNDWORK_FAITHFULNESS_BACKEND: lexical
+        run: uv run python scripts/run_eval.py
       - name: Check every published number against a fresh render
         env:
           GROUNDWORK_TOKENIZER_BACKEND: approximate

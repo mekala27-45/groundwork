@@ -115,6 +115,29 @@ def test_claims_step_pins_deterministic_backends_for_reproducibility() -> None:
     assert claims_env["GROUNDWORK_FAITHFULNESS_BACKEND"] == "lexical"
 
 
+def test_verify_job_seeds_builds_questions_and_evaluates_before_checking() -> None:
+    """The same real bug test_ci_workflow.py's own equivalent test
+    guards against, applied here: without a real evaluation run against
+    a freshly built question set, the final check can never match the
+    real committed README.md and RESULTS.md. All four scripts must run,
+    in this exact order, before the final check.
+    """
+    workflow = _load_workflow()
+    run_commands = [step["run"] for step in workflow["jobs"]["verify"]["steps"] if "run" in step]
+    ordered_markers = [
+        "seed_demo_workspaces.py",
+        "build_eval_questions.py",
+        "run_eval.py",
+        "check_published_numbers.py",
+    ]
+    indices = [
+        next(i for i, run in enumerate(run_commands) if marker in run) for marker in ordered_markers
+    ]
+    assert indices == sorted(indices), (
+        "seed, build questions, run eval, and check must run in that exact order"
+    )
+
+
 def test_release_job_creates_a_real_github_release_from_the_pushed_tag() -> None:
     workflow = _load_workflow()
     release_steps = workflow["jobs"]["release"]["steps"]

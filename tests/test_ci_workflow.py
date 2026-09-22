@@ -85,6 +85,33 @@ def test_claims_job_pins_deterministic_backends_for_reproducibility() -> None:
     assert claims_env["GROUNDWORK_FAITHFULNESS_BACKEND"] == "lexical"
 
 
+def test_claims_job_seeds_builds_questions_and_evaluates_before_checking() -> None:
+    """A real bug, caught only once this job actually ran against a real
+    GitHub remote for the first time: without a real evaluation run,
+    build_manifest() finds no EvalRun or RedTeamResult rows and reports
+    every number that depends on one as NOT_YET_RUN, which can never
+    match the real committed README.md and RESULTS.md, and without a
+    fresh evalset/questions.yaml, scripts/run_eval.py itself fails
+    outright, since every reseed generates new chunk ids the previously
+    committed question set does not resolve against. All four scripts
+    must run, in this exact order, before the final check.
+    """
+    workflow = _load_workflow()
+    run_commands = [step["run"] for step in workflow["jobs"]["claims"]["steps"] if "run" in step]
+    ordered_markers = [
+        "seed_demo_workspaces.py",
+        "build_eval_questions.py",
+        "run_eval.py",
+        "check_published_numbers.py",
+    ]
+    indices = [
+        next(i for i, run in enumerate(run_commands) if marker in run) for marker in ordered_markers
+    ]
+    assert indices == sorted(indices), (
+        "seed, build questions, run eval, and check must run in that exact order"
+    )
+
+
 def test_no_job_requires_an_llm_api_key_to_go_green() -> None:
     """This build's own hard constraint, checked structurally: design for
     a missing LLM key from the first commit. A GROUNDWORK_LLM_API_KEY

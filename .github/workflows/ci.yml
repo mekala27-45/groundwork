@@ -104,6 +104,14 @@ jobs:
     # the suite to pass either way.
     services:
       postgres:
+        # A literal image tag, not ${{ env.POSTGRES_IMAGE }}: GitHub Actions
+        # resolves jobs.<job_id>.services before the job's own env context
+        # exists, so an env reference here fails workflow validation outright
+        # ("Unrecognized named-value: 'env'"), discovered only once this
+        # workflow ran for real against a real GitHub remote. The value is
+        # still the one pinned in this file's own top level env block above,
+        # kept in sync by hand since GitHub gives no other way to share it
+        # with a services block.
         image: "pgvector/pgvector:0.6.0-pg16"
         env:
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
@@ -136,6 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
+        # Literal for the same reason the test job's image is literal above.
         image: "pgvector/pgvector:0.6.0-pg16"
         env:
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
@@ -179,6 +188,24 @@ jobs:
         run: uv run alembic upgrade head
       - name: Seed the demo workspaces
         run: uv run python scripts/seed_demo_workspaces.py
+      - name: Build the evaluation question set
+        # Every reseed generates fresh workspace, document, and chunk ids
+        # (scripts/seed_demo_workspaces.py calls new_id(), never a fixed
+        # value), so a previously committed evalset/questions.yaml points
+        # at chunk ids that no longer exist. This step re-derives it
+        # against the workspaces just seeded above, the same "seed, then
+        # build questions, then run eval" order CONTRIBUTING.md's own
+        # reseed cycle describes, discovered only once this job actually
+        # ran against a fresh database for the first time.
+        run: uv run python scripts/build_eval_questions.py
+      - name: Run the evaluation harness
+        # Without this step, build_manifest() finds no EvalRun or
+        # RedTeamResult rows for this run and reports every number that
+        # depends on one as NOT_YET_RUN, which can never match the real
+        # committed README.md and RESULTS.md. Same story as the step
+        # above: missing since this job was first written, invisible
+        # until a real run against a real remote exposed it.
+        run: uv run python scripts/run_eval.py
       - name: Check every published number against a fresh render
         run: uv run python scripts/check_published_numbers.py
 

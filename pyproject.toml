@@ -40,7 +40,18 @@ mypy_path = "packages/core/src:packages/ingest/src:packages/chunk/src:packages/r
 exclude = ["tests/fixtures", "alembic/versions", "web/"]
 
 [[tool.mypy.overrides]]
-module = ["pymupdf.*", "fitz.*", "pdfplumber.*", "pytesseract.*", "pdf2image.*", "sentence_transformers.*", "litellm.*", "PIL.*"]
+module = [
+    "pymupdf.*",
+    "fitz.*",
+    "pdfplumber.*",
+    "pytesseract.*",
+    "pdf2image.*",
+    "sentence_transformers.*",
+    "litellm.*",
+    "PIL.*",
+    "sklearn.*",
+    "scipy.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

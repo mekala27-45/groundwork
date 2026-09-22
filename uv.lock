@@ -1155,6 +1155,7 @@ version = "0.1.0"
 source = { editable = "packages/retrieve" }
 dependencies = [
     { name = "asyncpg" },
+    { name = "groundwork-api" },
     { name = "groundwork-chunk" },
     { name = "groundwork-core" },
     { name = "numpy" },
@@ -1168,6 +1169,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "asyncpg", specifier = ">=0.29" },
+    { name = "groundwork-api", editable = "packages/api" },
     { name = "groundwork-chunk", editable = "packages/chunk" },
     { name = "groundwork-core", editable = "packages/core" },
     { name = "numpy", specifier = ">=2.0" },

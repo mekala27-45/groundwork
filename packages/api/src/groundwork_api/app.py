@@ -23,7 +23,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from groundwork_api.db import dispose_engine
 from groundwork_api.logging import RequestLoggingMiddleware, configure_logging, get_logger
-from groundwork_api.routers import conversations, health, workspaces
+from groundwork_api.routers import chunks, conversations, health, workspaces
 from groundwork_api.routers import eval as eval_router
 from groundwork_core.config import get_settings
 
@@ -65,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(workspaces.router)
     app.include_router(conversations.router)
+    app.include_router(chunks.router)
     app.include_router(eval_router.router)
 
     return app

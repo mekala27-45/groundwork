@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/* The validated palette carried forward from day 3 (cityflow) and reused
+   by day 4 (frontdesk), per section 12 of the build prompt: the whole
+   series reads as one person's system rather than four different color
+   choices. Values are exactly the corrected set from
+   scripts/validate_palette.js's own run (see claude/day-03-cityflow-outcome.md
+   in this project's history): slot 6 moved to #2563EB dark / #1D4ED8
+   light, and the light sequential ramp gained a darker leading step,
+   both fixing a real adjacent pair failure the validator caught rather
+   than an aesthetic preference. Categorical hues are assigned in fixed
+   order everywhere in this app and never cycled or reassigned per view.
+
+   Only the accent, status, and chart colors live in @theme: their names
+   (accent, success, series-1, seq-1, and so on) are distinctive enough
+   that Tailwind v4's automatic bg-/text-/border- utility generation from
+   a --color-* token reads cleanly (bg-accent, text-series-3). The
+   neutral surface and text tokens below are plain custom properties
+   instead, referenced with Tailwind's arbitrary value syntax
+   (bg-[var(--bg-base)]): names like base, primary, or muted would
+   otherwise generate stuttering, easy to typo utility names
+   (bg-bg-base, text-text-primary). */
+@theme {
+  --color-accent: #0891b2;
+  --color-success: #059669;
+  --color-danger: #ef4444;
+  --color-warning: #d97706;
+
+  --color-series-1: #0891b2;
+  --color-series-2: #d97706;
+  --color-series-3: #8b5cf6;
+  --color-series-4: #059669;
+  --color-series-5: #ef4444;
+  --color-series-6: #2563eb;
+  --color-series-7: #ec4899;
+  --color-series-8: #65a30d;
+
+  --color-seq-1: #155e75;
+  --color-seq-2: #0e7490;
+  --color-seq-3: #0891b2;
+  --color-seq-4: #06b6d4;
+  --color-seq-5: #22d3ee;
+  --color-seq-6: #67e8f9;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* Dark by default (the whole series is dark first, real light theme
+   second, per day 2's own "works on a phone" note carried forward), a
+   true second palette on [data-theme="light"], not a washed out filter
+   over the dark one. */
+:root {
+  --bg-base: #0b0f14;
+  --bg-raised: #121821;
+  --bg-sunken: #080b0f;
+  --border-subtle: #1f2937;
+  --border-strong: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+}
+
+:root[data-theme="light"] {
+  --bg-base: #fafafa;
+  --bg-raised: #ffffff;
+  --bg-sunken: #f1f5f9;
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --color-success: #047857;
+  --color-danger: #dc2626;
+  --color-warning: #b45309;
+
+  --color-series-1: #0891b2;
+  --color-series-2: #b45309;
+  --color-series-3: #7c3aed;
+  --color-series-4: #047857;
+  --color-series-5: #dc2626;
+  --color-series-6: #1d4ed8;
+  --color-series-7: #db2777;
+  --color-series-8: #4d7c0f;
+
+  --color-seq-1: #083344;
+  --color-seq-2: #155e75;
+  --color-seq-3: #0e7490;
+  --color-seq-4: #0891b2;
+  --color-seq-5: #06b6d4;
+  --color-seq-6: #22d3ee;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+/* Status colors are reserved for state (pass, fail, warning) and never
+   reused as a chart series color, per the dataviz rules this series has
+   followed since day 2. */
+.status-pass {
+  color: var(--color-success);
+}
+
+.status-fail {
+  color: var(--color-danger);
+}
+
+.status-warn {
+  color: var(--color-warning);
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

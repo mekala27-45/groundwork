@@ -28,6 +28,18 @@ class DocumentOut(StrictModel):
     uploaded_at: datetime
 
 
+class ChunkOut(StrictModel):
+    id: UUID
+    document_id: UUID
+    workspace_id: UUID
+    strategy: ChunkStrategy
+    text: str
+    page_start: int
+    page_end: int
+    section_title: str | None
+    injection_flag: str | None
+
+
 class WorkspaceOut(StrictModel):
     id: UUID
     name: str
@@ -116,6 +128,7 @@ class ErrorOut(StrictModel):
 
 __all__ = [
     "AskRequest",
+    "ChunkOut",
     "ClaimOut",
     "CitationVerificationOut",
     "ConversationOut",

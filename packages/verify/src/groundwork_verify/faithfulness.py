@@ -164,9 +164,17 @@ def check_faithfulness(
     model was used...") would also risk scoring that framing as an
     unsupported claim about the document, when it is a claim about how
     the system is presenting its answer, not about the document at all.
+
+    chunks[0].injection_flag is not None is the one case where "quoted
+    verbatim by construction" stops being true: ExtractiveGenerator
+    withholds a flagged chunk's text instead of quoting it (see that
+    class's own docstring), so there is no claim about the document to
+    score at all, the same empty result an empty chunks list already
+    returns, not a claim built from text the rendered answer never
+    actually contains.
     """
     if extractive_fallback:
-        if not chunks:
+        if not chunks or chunks[0].injection_flag is not None:
             return []
         top = chunks[0]
         return [

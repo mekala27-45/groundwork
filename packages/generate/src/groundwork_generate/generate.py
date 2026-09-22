@@ -96,15 +96,56 @@ def _format_extractive_answer(chunk: Chunk) -> str:
     )
 
 
+def _format_flagged_answer(chunk: Chunk) -> str:
+    return (
+        "The most relevant passage in this document, "
+        f"{_page_reference(chunk)}, was flagged by the ingestion time security heuristic "
+        f"({chunk.injection_flag}) for suspicious embedded content: near invisible styling, "
+        "instruction shaped language, or both. This is an extractive answer, with no "
+        "language model in the loop to judge whether that content is safe to repeat, so it "
+        "is withheld here rather than quoted verbatim. A human should review this document "
+        "before it is trusted."
+    )
+
+
 class ExtractiveGenerator:
     """Zero network, zero cost: the top ranked chunk returned verbatim
     with its citation and page reference, clearly labeled as extractive
-    rather than generated, per section 9's explicit requirement."""
+    rather than generated, per section 9's explicit requirement.
+
+    The one exception is a chunk the ingestion time heuristic flagged
+    (Chunk.injection_flag is not None, set by groundwork_retrieve.index
+    from groundwork_ingest.security's verdict). Section 9's "verbatim" is
+    the right default because there is normally no judgment call being
+    made, only a citation being rendered, but a flagged chunk is
+    specifically the case where quoting verbatim is not safe: this build's
+    own injection test PDF embeds its payload as ordinary extractable
+    text styled to be invisible to a human reader, which means the
+    payload, marker string included, is already sitting in chunk.text
+    exactly like any other sentence, with nothing to stop a verbatim
+    quote from repeating it. The LLM path's defense is structural, the
+    system prompt telling a real model to treat retrieved content as data
+    never instructions, and that defense only exists because a model is
+    there to make the judgment call. The extractive path has no model in
+    the loop to make that call at all, so for this one, narrow,
+    heuristically flagged case it declines to quote rather than repeat
+    content nobody has judged safe. See generate_answer()'s tests and
+    packages/verify/tests/test_injection_defense.py for the concrete
+    marker string this closes off.
+    """
 
     async def generate(self, question: str, chunks: list[Chunk]) -> GenerationResult:
         if not chunks:
             return _not_covered_result(extractive_fallback=True)
         top = chunks[0]
+        if top.injection_flag is not None:
+            return GenerationResult(
+                answer=_format_flagged_answer(top),
+                extractive_fallback=True,
+                cited_chunk_ids=[],
+                latency_ms=0.0,
+                cost_usd=0.0,
+            )
         return GenerationResult(
             answer=_format_extractive_answer(top),
             extractive_fallback=True,

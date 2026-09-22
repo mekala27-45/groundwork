@@ -176,6 +176,73 @@ async def test_index_document_uses_the_resolved_backend_when_no_embedder_is_inje
     assert all(row.embedding_backend == "tfidf" for row in rows)
 
 
+def _long_page(page_number: int, sentence: str, *, injection_flag: str | None) -> ExtractedPage:
+    """Repeats sentence enough times to comfortably clear naive chunking's
+    256 token default budget on its own, so a two page ExtractedDocument
+    built from two of these is guaranteed to produce more than one naive
+    chunk rather than risking both pages landing in a single merged one,
+    which would leave nothing unflagged to compare against."""
+    text = " ".join([sentence] * 60)
+    words = text.split()
+    return ExtractedPage(
+        page_number=page_number,
+        text=text,
+        spans=[_span(w, page=page_number) for w in words],
+        tables=[],
+        char_count=len(text),
+        page_area_pt2=1000.0,
+        text_density=0.05,
+        used_ocr=False,
+        injection_flag=injection_flag,
+    )
+
+
+async def test_index_document_propagates_the_injection_flag_from_page_to_chunk(
+    db_session: AsyncSession,
+) -> None:
+    """ExtractedPage.injection_flag, computed during extraction, must
+    reach the stored Chunk row: models.py's own docstring says this
+    column exists specifically to be surfaced in the eval dashboard, and
+    it cannot be if the signal is silently dropped somewhere between
+    extraction and storage, which is exactly what happened before this
+    function learned to look it up per chunk.
+    """
+    ws, doc = await _seed_workspace_and_document(db_session)
+    extracted = ExtractedDocument(
+        filename="flagged.pdf",
+        sha256="4" * 64,
+        page_count=2,
+        pages=[
+            _long_page(
+                1,
+                "This page is perfectly ordinary content with nothing suspicious.",
+                injection_flag=None,
+            ),
+            _long_page(
+                2,
+                "This page has a near invisible instruction embedded in it.",
+                injection_flag="near_invisible_instruction_language",
+            ),
+        ],
+    )
+
+    rows = await index_document(
+        db_session,
+        workspace_id=ws.id,
+        document_id=doc.id,
+        extracted=extracted,
+        embedder=_StubEmbedder(),
+    )
+
+    naive_rows = [r for r in rows if r.strategy == ChunkStrategy.NAIVE]
+    touches_page_2 = [r for r in naive_rows if r.page_start <= 2 <= r.page_end]
+    page_1_only = [r for r in naive_rows if r.page_end < 2]
+    assert touches_page_2, "the long page 2 content must produce at least one naive chunk"
+    assert page_1_only, "the long page 1 content must produce at least one page-1-only naive chunk"
+    assert all(r.injection_flag == "near_invisible_instruction_language" for r in touches_page_2)
+    assert all(r.injection_flag is None for r in page_1_only)
+
+
 async def test_index_document_on_an_empty_document_produces_no_rows(
     db_session: AsyncSession,
 ) -> None:

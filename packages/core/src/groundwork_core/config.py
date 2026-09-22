@@ -106,6 +106,27 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    admin_token: str | None = None
+    """Gates exactly one thing: DELETE /workspaces/{id} in groundwork_api,
+    the one write path that could otherwise let any visitor to a live
+    deployment erase a workspace, their own or someone else's. Unset by
+    default (the fail closed choice: with no token configured, the delete
+    route refuses every request rather than accepting an unauthenticated
+    one), and deliberately never required to view chat, upload a document,
+    or read the eval dashboard, which section 16's own definition of done
+    requires stay reachable in one click with no key. This is a single
+    shared secret checked against one header, not a user account system,
+    exactly as .env.example already says: a demo's admin gate, not full
+    auth.
+    """
+
+    cors_origins: str = "http://localhost:3000"
+    """Comma separated origins groundwork_api's CORS middleware allows.
+    The local web dev server by default; the production Fly deployment
+    sets this to the real GitHub Pages origin once the static web app is
+    live (build order steps 21 to 25), documented as an exact deploy step
+    rather than guessed at and hardcoded here before that URL exists."""
+
 
 def get_settings() -> Settings:
     return Settings()

@@ -1,0 +1,62 @@
+# Fly.io app configuration for groundwork_api.
+#
+# A fact worth recording plainly rather than assuming the playbook's
+# "free tier only" still describes Fly.io exactly as it did when that
+# rule was locked: checked against Fly's own current docs today (22
+# September 2026), Fly no longer offers an always free compute
+# allowance, only a free trial period and then usage based billing, a
+# card on file required. Neon, checked the same way, still offers a real,
+# permanent, no card required free plan (0.5 GB storage, 100 CU-hours a
+# month, pgvector included), so the database half of "free tier only"
+# holds; the API host half no longer does. auto_stop_machines and
+# min_machines_running = 0 below scale the API to zero between requests,
+# which is the closest this configuration can get to that original
+# constraint: near zero cost for a demo with light, bursty traffic,
+# rather than genuinely free. Stated honestly in RESULTS.md and the
+# runbook once those are written, not quietly assumed.
+#
+# app name left as a placeholder: this sandbox has no Fly account and
+# cannot run `fly launch` or `fly apps create`, so the real name is
+# chosen at actual deploy time, not guessed at here.
+
+app = "groundwork-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  GROUNDWORK_LOG_LEVEL = "INFO"
+  # GROUNDWORK_DATABASE_URL, GROUNDWORK_LLM_API_KEY, GROUNDWORK_JUDGE_MODEL
+  # and GROUNDWORK_ADMIN_TOKEN are set as Fly secrets at deploy time
+  # (`fly secrets set ...`), never written here: .env.example documents
+  # every one of them, and none belongs in a file this repo commits.
+  # Backend selection is left on "auto" in production deliberately,
+  # unlike ci.yml's claims job: a real deploy has real network access to
+  # huggingface.co, so it should get the real local models, not this
+  # sandbox's offline fallback.
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[deploy]
+  # Runs once per deploy, in its own machine, before traffic ever reaches
+  # the new release, and halts the deploy if it fails: a failed migration
+  # and a crash looping web process are different failures, kept
+  # separate here the same way the Dockerfile's own CMD comment explains.
+  release_command = "sh -c 'cd packages/api && alembic upgrade head'"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

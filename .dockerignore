@@ -1,0 +1,29 @@
+# Kept in sync in spirit with .gitignore, not identical: this file also
+# excludes things that ARE committed but that groundwork_api's own image
+# has no use for (the web app, docs, evalset fixtures), so a change to
+# any of those never busts the Dockerfile's build cache or bloats the
+# build context for an image that never reads them.
+.git/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+.DS_Store
+dist/
+build/
+*.egg
+
+# Not needed inside the API image.
+web/
+node_modules/
+docs/
+evalset/
+scripts/
+*.md

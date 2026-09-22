@@ -25,10 +25,13 @@ from functools import lru_cache
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, text
 
+from groundwork_api.app import create_app
 from groundwork_api.db import to_async_url
+from groundwork_api.deps import get_session
 from groundwork_core.config import Settings
 
 TEST_DATABASE_URL = (
@@ -98,3 +101,36 @@ async def db_session(test_settings: Settings) -> AsyncIterator[AsyncSession]:
             await conn.execute(text(f"TRUNCATE TABLE {table_names} RESTART IDENTITY CASCADE"))
     finally:
         await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+    """An httpx client wired directly to a fresh groundwork_api app (one
+    per test, per app.py's own module docstring), with get_session
+    overridden to hand out this test's own db_session rather than the
+    app's process wide engine singleton.
+
+    httpx.ASGITransport, not FastAPI's TestClient: TestClient drives the
+    app from a background anyio portal with its own event loop, and
+    db_session's asyncpg connection is bound to pytest-asyncio's loop for
+    this test function. Crossing loops is exactly the "attached to a
+    different loop" failure db_session's own docstring warns about;
+    ASGITransport runs requests on the caller's loop, this test's loop, so
+    the override never crosses one.
+
+    The app's lifespan (configure_logging, dispose_engine) deliberately
+    does not run here: dispose_engine only tears down the get_session_factory
+    singleton this fixture's override bypasses entirely, and structlog logs
+    fine, just unformatted, without configure_logging having run.
+    """
+
+    app = create_app()
+
+    async def _override_get_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = _override_get_session
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as async_client:
+        yield async_client

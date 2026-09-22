@@ -40,8 +40,16 @@ mypy_path = "packages/core/src:packages/ingest/src:packages/chunk/src:packages/r
 exclude = ["tests/fixtures", "alembic/versions", "web/"]
 
 [[tool.mypy.overrides]]
-module = ["fitz.*", "pdfplumber.*", "pytesseract.*", "pdf2image.*", "sentence_transformers.*", "litellm.*"]
+module = ["pymupdf.*", "fitz.*", "pdfplumber.*", "pytesseract.*", "pdf2image.*", "sentence_transformers.*", "litellm.*", "PIL.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pymupdf's C extension ships no type stubs, so every call into it looks
+# "untyped" to strict mode no matter how the caller annotates its own
+# signature. Relaxed only for the two modules that touch it directly;
+# every other module in the workspace keeps full strict checking.
+module = ["groundwork_ingest.extract", "groundwork_ingest.fixtures"]
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"

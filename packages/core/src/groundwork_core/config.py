@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     rerank_candidate_k: int = 24
     final_k: int = 5
 
-    ocr_density_threshold: float = 0.02
+    ocr_density_threshold: float = 0.0001
     """Below this fraction of extractable-characters-per-page-area, a page
     is treated as scanned and routed to the OCR fallback."""
 

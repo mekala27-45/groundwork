@@ -28,6 +28,16 @@
 
 name: Deploy web to Pages
 
+# A paths filtered push trigger does not fire on the single push that
+# creates a repository's default branch, discovered the same way the
+# services.image env bug in ci.yml and release.yml was discovered: this
+# workflow never ran on this repository's first push, which carried the
+# entire 30 commit history including every file under web/, because
+# GitHub evaluates that specific push as branch creation rather than as a
+# diff with paths to filter. The workflow_dispatch trigger below is the
+# reason this is recoverable by hand instead of only by a future commit
+# that happens to touch web/ again.
+
 on:
   push:
     branches: [master]

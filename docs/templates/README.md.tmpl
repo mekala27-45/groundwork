@@ -1,0 +1,30 @@
+# groundwork
+
+A multi tenant platform that turns an uploaded PDF into a chatbot that
+answers questions grounded only in that document, with verifiable
+citations, a measured refusal for anything the document does not cover,
+and a full evaluation harness proving retrieval quality, chunking
+strategy, and answer faithfulness rather than asserting them.
+
+This build is still in progress. Every number in this section is
+rendered by `scripts/check_published_numbers.py` from a live query
+against this repository's own database and `evalset/questions.yaml`,
+never typed in by hand; see `packages/api/src/groundwork_api/claims.py`
+for exactly how, and RESULTS.md for the full evaluation writeup as it
+fills in. ARCHITECTURE.md lands at build order step 26.
+
+## Current state
+
+- Demo workspaces seeded: {{workspace_count}}
+- Documents indexed: {{document_count}}
+- Chunks stored: {{naive_chunk_count}} naive, {{structure_chunk_count}} structure aware
+- Golden evaluation set: {{eval_question_count}} questions ({{eval_category_counts}})
+- Retrieval evaluation harness: {{retrieval_metrics_status}}
+- Faithfulness, isolation, and red team scorecard: {{red_team_status}}
+
+Full setup, deployment, and usage instructions land here once the API
+and web app are built and deployed (build order steps 19 through 27).
+
+## License
+
+Apache 2.0. See LICENSE.

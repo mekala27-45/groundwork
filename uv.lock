@@ -1056,6 +1056,7 @@ dependencies = [
     { name = "groundwork-retrieve" },
     { name = "groundwork-verify" },
     { name = "python-multipart" },
+    { name = "pyyaml" },
     { name = "sqlmodel" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1071,6 +1072,7 @@ requires-dist = [
     { name = "groundwork-retrieve", editable = "packages/retrieve" },
     { name = "groundwork-verify", editable = "packages/verify" },
     { name = "python-multipart", specifier = ">=0.0.12" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.31" },
 ]
@@ -1201,6 +1203,9 @@ requires-dist = [
 name = "groundwork-workspace"
 version = "0.1.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "pyyaml" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1214,6 +1219,7 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "pyyaml", specifier = ">=6.0" }]
 
 [package.metadata.requires-dev]
 dev = [

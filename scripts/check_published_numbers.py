@@ -17,10 +17,17 @@ figure came from a real query today" enforceable rather than aspirational.
 Usage:
     python scripts/check_published_numbers.py            # check, exit 1 on drift
     python scripts/check_published_numbers.py --write     # render and write in place
+
+--output-dir PATH writes to and compares against PATH instead of the repo
+root, with templates still read from the real docs/templates/. It exists
+so tests/test_check_published_numbers.py can exercise a clean pass and a
+deliberate violation against a throwaway directory rather than the real
+committed README.md and RESULTS.md.
 """
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -34,12 +41,16 @@ TEMPLATES = {
 }
 
 
-def render_all() -> dict[str, str]:
+async def render_all(templates: dict[str, Path] | None = None) -> dict[str, str]:
     from groundwork_api.claims import build_manifest, render_template
+    from groundwork_api.db import dispose_engine, session_scope
 
-    manifest = build_manifest()
+    async with session_scope() as session:
+        manifest = await build_manifest(session)
+    await dispose_engine()
+
     rendered = {}
-    for name, template_path in TEMPLATES.items():
+    for name, template_path in (templates or TEMPLATES).items():
         if not template_path.exists():
             print(f"check_published_numbers: missing template {template_path}", file=sys.stderr)
             raise SystemExit(1)
@@ -49,7 +60,11 @@ def render_all() -> dict[str, str]:
 
 def main(argv: list[str]) -> int:
     write = "--write" in argv
-    rendered = render_all()
+    output_dir = REPO_ROOT
+    if "--output-dir" in argv:
+        output_dir = Path(argv[argv.index("--output-dir") + 1])
+
+    rendered = asyncio.run(render_all())
 
     if not rendered:
         print(
@@ -58,14 +73,15 @@ def main(argv: list[str]) -> int:
         return 1
 
     if write:
+        output_dir.mkdir(parents=True, exist_ok=True)
         for name, content in rendered.items():
-            (REPO_ROOT / name).write_text(content, encoding="utf-8")
+            (output_dir / name).write_text(content, encoding="utf-8")
             print(f"check_published_numbers: wrote {name}")
         return 0
 
     drift = []
     for name, content in rendered.items():
-        target = REPO_ROOT / name
+        target = output_dir / name
         current = target.read_text(encoding="utf-8") if target.exists() else ""
         if current != content:
             drift.append(name)

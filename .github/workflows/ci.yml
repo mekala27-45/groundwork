@@ -3,9 +3,14 @@
 # needs checked: lint, typecheck, the em dash gate, the test suite against
 # a real Postgres with pgvector (never sqlite standing in for it), the
 # claim gate that catches a hand typed number in README.md or RESULTS.md,
-# and the web app build, which starts building for real the moment
-# build order steps 22 to 25 add a web/package.json and does nothing
-# before that rather than failing on a directory that does not exist yet.
+# and the web app build. The web job ran conditionally, probing for
+# web/package.json first, through build order steps 20 and 21 while the
+# web app did not exist yet; simplified to run unconditionally once build
+# order step 21 committed it for real, the same day this comment was
+# updated to say so rather than left describing a state already past.
+# Deploying the built output to GitHub Pages is a separate workflow,
+# .github/workflows/pages.yml, scoped to only the commits that actually
+# touch web/ rather than running on every push.
 #
 # No secret is required for any job to go green. This build's own hard
 # constraint, designing for a missing LLM key and a missing embedding API
@@ -182,38 +187,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Check whether the web app exists yet
-        id: probe
-        run: |
-          if [ -f web/package.json ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/setup-node@v7
-        if: steps.probe.outputs.exists == 'true'
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install web dependencies
-        if: steps.probe.outputs.exists == 'true'
         working-directory: web
         run: npm ci
       - name: Type check
-        if: steps.probe.outputs.exists == 'true'
         working-directory: web
-        run: npm run typecheck --if-present
+        run: npm run typecheck
       - name: Lint
-        if: steps.probe.outputs.exists == 'true'
         working-directory: web
-        run: npm run lint --if-present
+        run: npm run lint
       - name: Build the static export
-        if: steps.probe.outputs.exists == 'true'
         working-directory: web
         run: npm run build
-      - name: Not built yet
-        if: steps.probe.outputs.exists == 'false'
-        run: |
-          echo "web/ does not exist yet (build order steps 22 to 25)."
-          echo "This job starts building and type checking it automatically the moment web/package.json lands, with no change to this workflow required."

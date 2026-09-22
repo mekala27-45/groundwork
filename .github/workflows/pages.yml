@@ -1,0 +1,88 @@
+# Builds the static Next.js export in web/ and publishes it to GitHub
+# Pages, section 12's "static shell on GitHub Pages, live calls to the
+# Fly API". Separate from ci.yml on purpose: ci.yml's own web job already
+# proves every push still type checks, lints, and builds; this workflow
+# only needs to run when there is something new to actually publish, so
+# it is scoped with paths: to web/** and itself, rather than firing (and
+# spending Pages deploy minutes) on a commit that never touched the web
+# app at all.
+#
+# NEXT_PUBLIC_API_BASE_URL is read from this repository's own Actions
+# variable (Settings, Secrets and variables, Actions, Variables), not
+# hardcoded here, for the same reason fly.toml's own comment gives for
+# leaving GROUNDWORK_DATABASE_URL and friends out of that file: the real
+# value is a fact about an actual Fly deployment this sandbox has never
+# made (fly.toml's app name is a placeholder, and Fly app names are
+# globally unique, so the real assigned host is only known once `fly
+# launch` actually runs). The fallback below is that same placeholder
+# name's expected host, used only until the variable is set for real at
+# deploy time, documented here rather than silently guessed at.
+#
+# actions/checkout, actions/setup-node, actions/configure-pages,
+# actions/upload-pages-artifact, and actions/deploy-pages are all
+# GitHub's own, so pinned to a floating major version tag, the same low
+# risk, low maintenance choice ci.yml already makes for actions/checkout
+# and actions/setup-node (see that file's own header comment); each
+# version below was checked against that action's real current release
+# list while writing this file, not assumed from an older memory of it.
+
+name: Deploy web to Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Type check
+        working-directory: web
+        run: npm run typecheck
+      - name: Lint
+        working-directory: web
+        run: npm run lint
+      - name: Build the static export
+        working-directory: web
+        env:
+          NEXT_BASE_PATH: /groundwork
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL || 'https://groundwork-api.fly.dev' }}
+        run: npm run build
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/out
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

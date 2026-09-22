@@ -45,6 +45,12 @@ web-dev:
 web-build:
 	cd web && npm run build
 
+deploy-api:
+	cd packages/api && fly deploy
+
+deploy-web:
+	@echo "No manual step needed: pushing to master with changes under web/ or .github/workflows/pages.yml triggers that workflow, which builds and publishes the static export to GitHub Pages on its own."
+
 clean:
 	find . -name "__pycache__" -not -path "./.venv/*" -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .ruff_cache .mypy_cache .pytest_cache htmlcov .coverage

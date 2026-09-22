@@ -122,10 +122,12 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
     """Comma separated origins groundwork_api's CORS middleware allows.
-    The local web dev server by default; the production Fly deployment
-    sets this to the real GitHub Pages origin once the static web app is
-    live (build order steps 21 to 25), documented as an exact deploy step
-    rather than guessed at and hardcoded here before that URL exists."""
+    The local web dev server by default; fly.toml's own [env] block sets
+    this to the real GitHub Pages origin, https://mekala27-45.github.io,
+    for the production Fly deployment, a documented exact deploy step
+    (build order step 24, the same commit that added
+    .github/workflows/pages.yml) rather than guessed at and hardcoded
+    here before that URL existed."""
 
 
 def get_settings() -> Settings:

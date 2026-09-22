@@ -34,6 +34,7 @@ from groundwork_api.models import (
     EvalQuestion,
     EvalRun,
     ExtractionMethod,
+    RedTeamResult,
     Turn,
     Workspace,
 )
@@ -193,10 +194,31 @@ async def delete_workspace(
     each one scoped directly by the denormalized workspace_id column
     models.py's own module docstring describes, rather than joining
     through Conversation or Document to find rows to remove.
+
+    RedTeamResult is the one exception, deleted first of all, and the
+    exception is real, not stylistic: scripts/seed_demo_workspaces.py's
+    own _reset_workspace found this exact gap the hard way once
+    RedTeamResult.turn_id (build order step 22) gave probe results a real
+    foreign key into Turn, and this endpoint had the identical bug, only
+    reachable here through a live admin call instead of a reseed script.
+    RedTeamResult carries no workspace_id of its own, unlike every other
+    table below, because one run_id's probes deliberately span all three
+    demo workspaces at once (see RedTeamResult.run_id's own docstring),
+    so it cannot be scoped by a direct workspace_id equality the way its
+    siblings are; it is still scoped to this workspace transitively,
+    through whichever Turn each probe actually produced, so that is what
+    this deletes by, before the Turn rows it points at are gone.
     """
     workspace = await _get_workspace_or_404(session, workspace_id)
     name_hash = content_hash(workspace.name)  # never log the real name, only its fingerprint
 
+    await session.execute(
+        delete(RedTeamResult).where(
+            col(RedTeamResult.turn_id).in_(
+                select(col(Turn.id)).where(col(Turn.workspace_id) == workspace_id)
+            )
+        )
+    )
     await session.execute(delete(Turn).where(col(Turn.workspace_id) == workspace_id))
     await session.execute(
         delete(Conversation).where(col(Conversation.workspace_id) == workspace_id)

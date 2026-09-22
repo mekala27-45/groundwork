@@ -27,6 +27,12 @@ primary_region = "iad"
 
 [env]
   GROUNDWORK_LOG_LEVEL = "INFO"
+  # The real GitHub Pages origin, build order step 24's own deploy step,
+  # not guessed at before the web app existed to have an origin at all
+  # (see Settings.cors_origins's own docstring). CORS matches the Origin
+  # header by scheme and host only, never by path, so this is the site's
+  # origin, not the /groundwork project page path itself.
+  GROUNDWORK_CORS_ORIGINS = "https://mekala27-45.github.io"
   # GROUNDWORK_DATABASE_URL, GROUNDWORK_LLM_API_KEY, GROUNDWORK_JUDGE_MODEL
   # and GROUNDWORK_ADMIN_TOKEN are set as Fly secrets at deploy time
   # (`fly secrets set ...`), never written here: .env.example documents

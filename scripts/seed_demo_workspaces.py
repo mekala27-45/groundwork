@@ -35,6 +35,7 @@ from pathlib import Path
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from groundwork_api.db import dispose_engine, session_scope
 from groundwork_api.models import (
@@ -44,6 +45,7 @@ from groundwork_api.models import (
     EvalQuestion,
     EvalRun,
     ExtractionMethod,
+    RedTeamResult,
     Turn,
     Workspace,
 )
@@ -79,11 +81,32 @@ async def _reset_workspace(session: AsyncSession, name: str, description: str) -
     this function had never deleted either table. Fixed here rather than
     only in the one run that happened to hit it, since every future
     reseed after any real chat activity would fail the identical way.
+
+    A second real gap, found the identical way two build order steps
+    later: RedTeamResult.turn_id (build order step 22) gave every red
+    team probe result a real foreign key into Turn, and the very next
+    reseed after a real eval run failed outright too, this time with
+    "red_team_result_turn_id_fkey", for the exact same underlying
+    mistake, deleting a referenced Turn row before the row that
+    references it. RedTeamResult carries no workspace_id column of its
+    own, unlike Chunk, Turn, and Conversation below: one run_id's
+    probes deliberately span all three demo workspaces at once (see
+    RedTeamResult.run_id's own docstring), so unlike its siblings here
+    it cannot be filtered by a direct workspace_id equality. Its rows
+    are still scoped to this workspace transitively, through whichever
+    Turn each probe actually produced, so that is what this deletes by.
     """
     existing = (
         (await session.execute(select(Workspace).where(Workspace.name == name))).scalars().all()
     )
     for old in existing:
+        await session.execute(
+            delete(RedTeamResult).where(
+                col(RedTeamResult.turn_id).in_(
+                    select(col(Turn.id)).where(col(Turn.workspace_id) == old.id)
+                )
+            )
+        )
         await session.execute(delete(Turn).where(Turn.workspace_id == old.id))
         await session.execute(delete(Conversation).where(Conversation.workspace_id == old.id))
         await session.execute(delete(Chunk).where(Chunk.workspace_id == old.id))

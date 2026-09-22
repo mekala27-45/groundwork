@@ -5,12 +5,12 @@ mutable global), and the module level app below is what
 per the Dockerfile's own CMD.
 
 CORS is the one piece of configuration that only matters once the static
-web app (build order steps 21 to 25) is live on GitHub Pages, a different
-origin than this API's own Fly.io domain by construction: a static export
-cannot call a different origin without it. Settings.cors_origins, its own
-docstring explains, defaults to the local web dev server and is set to
-the real Pages origin as a documented, explicit deploy step, never
-guessed at here.
+web app, live on GitHub Pages via .github/workflows/pages.yml (build
+order step 24), calls this API from a different origin than its own
+Fly.io domain by construction: a static export cannot call a different
+origin without it. Settings.cors_origins, its own docstring explains,
+defaults to the local web dev server; fly.toml's own [env] block sets it
+to the real Pages origin for the production deployment.
 """
 
 from __future__ import annotations

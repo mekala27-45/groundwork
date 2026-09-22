@@ -97,17 +97,23 @@ def test_no_job_requires_an_llm_api_key_to_go_green() -> None:
             assert "GROUNDWORK_LLM_API_KEY" not in step.get("env", {})
 
 
-def test_web_job_does_not_fail_before_the_web_app_exists() -> None:
-    """Build order steps 22 to 25 have not run yet, so web/package.json
-    does not exist in this commit. Every step in the web job that assumes
-    it does must be conditional, or CI goes red the moment this file is
-    committed rather than the moment it is supposed to."""
+def test_web_job_runs_unconditionally_now_that_the_web_app_is_real() -> None:
+    """Through build order steps 20 and 21, web/package.json did not exist
+    yet, and every web touching step in this job carried its own `if:`
+    guard so CI would not go red on a directory that was not supposed to
+    exist yet (see this job's own probe step in earlier commits). Build
+    order step 21 committed web/ for real; this test asserts the opposite
+    of what the old probe-based test asserted, the same "structural
+    property this repository actually depends on" reasoning applied to
+    the new state rather than the old one. web/package.json existing in
+    the working tree is checked directly too, so this test would fail
+    loudly rather than silently pass if the web app were ever removed.
+    """
+    assert (REPO_ROOT / "web" / "package.json").is_file()
     workflow = _load_workflow()
     web_steps = workflow["jobs"]["web"]["steps"]
     for step in web_steps:
-        touches_web_app = step.get("working-directory") == "web" or "npm" in step.get("run", "")
-        if touches_web_app:
-            assert step.get("if"), (
-                f"step {step.get('name', step)!r} touches the web app but has no "
-                "condition guarding it"
-            )
+        assert "if" not in step, (
+            f"step {step.get('name', step)!r} still carries a conditional guard; "
+            "the web app is committed for real now, this job should run unconditionally"
+        )

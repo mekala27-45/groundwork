@@ -108,6 +108,30 @@ async def ask_question(
     body: AskRequest,
     session: AsyncSession = Depends(get_session),
 ) -> TurnOut:
+    """A real bug lived here through build order step 24, found only by
+    driving a real browser against a real running server for a demo
+    recording, never by the test suite: chat.ask() only flushes the new
+    Turn, deliberately, so scripts/run_eval.py can batch dozens of calls
+    under one commit rather than one round trip per question (see that
+    script's own single commit at the end of main()). Every other
+    caller of ask(), this route included, is responsible for its own
+    commit, the same division create_conversation above already follows
+    for Conversation, and this route never did it. deps.get_session()
+    hands each real request its own fresh session with nothing after
+    its yield to commit automatically, so the flush a request performed
+    was rolled back the moment that request's session closed: the
+    response this route returned looked entirely correct (Turn.id is
+    generated in Python by default_factory, not by the database, so it
+    is populated before any commit could happen at all), but the row
+    was already gone by the time any later request, including
+    GET /turns/{id}, the one /trace itself calls, looked for it. Every
+    test in this file drives its HTTP calls through one shared test
+    session (see conftest.py's client fixture docstring), which made a
+    flush alone indistinguishable from a real commit in every test that
+    already existed; test_ask_question_actually_commits_so_a_separate_
+    connection_can_see_it below opens a second, independent connection
+    specifically to tell the two apart.
+    """
     try:
         turn = await ask(
             session,
@@ -120,6 +144,7 @@ async def ask_question(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="conversation not found"
         ) from exc
+    await session.commit()
     return _turn_out(turn)
 
 

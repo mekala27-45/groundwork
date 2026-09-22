@@ -19,18 +19,23 @@ and reach real generation rather than the relevance gate's refusal.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from groundwork_api.db import to_async_url
 from groundwork_api.models import (
     Chunk,
     ChunkStrategy,
     Conversation,
     Document,
     ExtractionMethod,
+    Turn,
     Workspace,
 )
+from groundwork_core.config import Settings
 from groundwork_core.ids import new_id
 from groundwork_retrieve.embeddings import get_embedder
 
@@ -190,3 +195,54 @@ async def test_get_turn_returns_the_full_detail(
     assert response.status_code == 200
     assert response.json()["id"] == turn_id
     assert response.json()["question"] == "How long do sessions run?"
+
+
+async def test_ask_question_actually_commits_so_a_separate_connection_can_see_it(
+    client: AsyncClient, db_session: AsyncSession, test_settings: Settings
+) -> None:
+    """A real, previously undetected bug, found only by driving a real
+    browser against a real running server, not by any test, including
+    the one directly above this: ask_question's own router handler
+    called chat.ask(), which only flushes the new Turn by design (see
+    that route's own docstring), and never committed. Every request
+    this file makes goes through the client fixture, whose get_session
+    override hands out this one test's single db_session for every
+    call (see conftest.py's client fixture docstring), so a flush from
+    the POST above was already visible to a "later" GET on the same
+    shared session regardless of whether a commit ever happened, the
+    same reason test_get_turn_returns_the_full_detail passes either
+    way. A real request in the real running app gets its own fresh
+    session per deps.get_session() call, so a flush with no commit
+    vanished the instant that request's session closed, and a turn a
+    real user asked would 404 on every subsequent look, /trace
+    included.
+
+    This test is the one in this file that can actually tell a flush
+    apart from a commit: it opens a second, fully independent
+    connection to the same database, bypassing client's shared session
+    override entirely, and confirms the turn is visible there too, not
+    only through the same session that created it.
+    """
+    workspace, _ = await _seed_workspace_with_chunk(db_session)
+    conversation = await _seed_conversation(db_session, workspace)
+
+    response = await client.post(
+        f"/conversations/{conversation.id}/turns",
+        json={"question": "How long do sessions run?"},
+    )
+    assert response.status_code == 201
+    turn_id = UUID(response.json()["id"])
+
+    engine = create_async_engine(to_async_url(test_settings.database_url), pool_pre_ping=True)
+    try:
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as independent_session:
+            fetched = await independent_session.get(Turn, turn_id)
+    finally:
+        await engine.dispose()
+
+    assert fetched is not None, (
+        "the turn was flushed but never committed by the request that created it, "
+        "so a genuinely separate connection cannot see it"
+    )
+    assert fetched.question == "How long do sessions run?"

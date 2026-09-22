@@ -59,6 +59,28 @@ class Settings(BaseSettings):
     """Below this fraction of extractable-characters-per-page-area, a page
     is treated as scanned and routed to the OCR fallback."""
 
+    relevance_threshold: float = 0.08
+    """Below this cosine similarity between a query and the single most
+    relevant chunk retrieval found, groundwork_api.chat.ask treats
+    retrieval as having found nothing usable and answers with the same
+    not-covered refusal an empty retrieval result produces, rather than
+    handing a generator (real or extractive) a chunk that is not actually
+    about the question. This is what lets out of scope refusal work on
+    every backend, including the zero cost extractive path, which has no
+    other way to judge relevance: the alternative, an LLM deciding on its
+    own that retrieved passages do not answer the question, only exists
+    when a real model is configured at all.
+
+    A provisional default, deliberately conservative (low), chosen before
+    any real measurement existed. build order step 20 runs the real 45
+    question eval set through this gate and reports, honestly, in
+    RESULTS.md and docs/security.md, how well this specific number
+    separates the out_of_scope category from every question the documents
+    actually answer under whichever embedding backend this environment
+    resolves to, and revises it here if the real numbers call for it,
+    rather than leaving an untested guess in place and asserting it works.
+    """
+
     log_level: str = "INFO"
 
 

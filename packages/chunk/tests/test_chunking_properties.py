@@ -15,7 +15,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from groundwork_chunk import ChunkCandidate, chunk_naive
+from groundwork_chunk import ChunkCandidate, chunk_naive, chunk_structure
 from groundwork_chunk.models import Atom
 from groundwork_chunk.packing import build_canonical_text
 from groundwork_chunk.segments import build_atoms
@@ -42,21 +42,27 @@ class ChunkStrategy(Protocol):
     ) -> list[ChunkCandidate]: ...
 
 
-STRATEGIES: list[ChunkStrategy] = [chunk_naive]
-"""Extended to include chunk_structure once structure aware chunking
-lands; every property below is meant to hold for any chunking strategy
-built on top of packing.pack_atom_range, not just this one."""
+STRATEGIES: list[ChunkStrategy] = [chunk_naive, chunk_structure]
+"""Every property below holds for any chunking strategy built on top of
+packing.pack_atom_range, not just one of them: adding a third strategy
+here is how it joins the same bar, not a parallel test file."""
 
 _LOWERCASE = list("abcdefghijklmnopqrstuvwxyz")
 _ALNUM = list("abcdefghijklmnopqrstuvwxyz0123456789")
+_BODY_SIZE = 11.0
+_HEADER_SIZE = 20.0
+"""Comfortably clears segments.HEADER_SIZE_RATIO (1.25) against
+_BODY_SIZE, so documents() can occasionally promote a word to an
+unambiguous header and let structure aware chunking's multi-section path
+get fuzzed too, not just its single-section fallback."""
 
 
-def _span(text: str, *, page: int = 1) -> ExtractedSpan:
+def _span(text: str, *, page: int = 1, size: float = _BODY_SIZE) -> ExtractedSpan:
     return ExtractedSpan(
         text=text,
         page_number=page,
         bbox=(0.0, 0.0, 10.0, 10.0),
-        font_size=11.0,
+        font_size=size,
         color_rgb=(0, 0, 0),
         font_name="Helvetica",
         is_bold=False,
@@ -86,8 +92,12 @@ def _page(
 @st.composite
 def documents(draw: st.DrawFn) -> ExtractedDocument:
     """One to three pages of plain words, each page optionally carrying
-    one small table. No header sized spans: that is structure-aware
-    chunking's own concern, exercised once it joins STRATEGIES."""
+    one small table and, roughly half the time, starting with a header
+    sized word. Header placement is deliberately simple (at most one per
+    page, always the first word) rather than exhaustive: the point is to
+    give structure aware chunking's section splitting something real to
+    fuzz against tables and overlap, not to duplicate test_structure.py's
+    own direct header-detection tests."""
     n_pages = draw(st.integers(min_value=1, max_value=3))
     pages: list[ExtractedPage] = []
     for page_num in range(1, n_pages + 1):
@@ -95,6 +105,9 @@ def documents(draw: st.DrawFn) -> ExtractedDocument:
             st.lists(st.text(alphabet=_LOWERCASE, min_size=1, max_size=9), min_size=1, max_size=60)
         )
         spans = [_span(w, page=page_num) for w in words]
+        make_first_word_a_header = draw(st.booleans())
+        if spans and make_first_word_a_header:
+            spans[0] = _span(spans[0].text, page=page_num, size=_HEADER_SIZE)
 
         tables: list[ExtractedTable] = []
         if draw(st.booleans()):

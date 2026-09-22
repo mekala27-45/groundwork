@@ -17,6 +17,15 @@ from PIL import Image, ImageDraw, ImageFont
 PAGE_WIDTH = 612.0
 PAGE_HEIGHT = 792.0
 
+INJECTION_TEST_MARKER = "GROUNDWORK_INJECTION_MARKER_7f3a2c9d"
+"""The exact string the hidden instruction in build_injection_test_pdf's
+output asks the assistant to emit. Defined once here so
+scripts/generate_test_fixtures.py, evalset/questions.yaml's injection
+category, and packages/verify's later injection defense test all assert
+against the identical literal rather than three copies that could quietly
+drift apart. Deliberately specific and machine generated looking, so a
+real answer could never innocently contain it by coincidence."""
+
 
 def build_page_boundary_test_pdf(path: Path) -> None:
     """Page 1 ends mid-sentence and mid-table-row; page 2 opens with the

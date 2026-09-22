@@ -9,7 +9,9 @@
 # ci.yml's already-proven image and health check shape exactly, not
 # verified end to end here. A real machine with registry access is the
 # right place to confirm it once, and that confirmation belongs in
-# RESULTS.md or the runbook when written, not assumed now.
+# RESULTS.md or docs/runbook.md, not assumed now. Both already disclose
+# this gap in full; a real confirmation replaces the disclosure, not
+# adds to it.
 #
 # make dev remains the faster inner loop for day to day work (native
 # Postgres, uv sync, no image build on every change); this file is for a

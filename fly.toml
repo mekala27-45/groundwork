@@ -12,8 +12,9 @@
 # min_machines_running = 0 below scale the API to zero between requests,
 # which is the closest this configuration can get to that original
 # constraint: near zero cost for a demo with light, bursty traffic,
-# rather than genuinely free. Stated honestly in RESULTS.md and the
-# runbook once those are written, not quietly assumed.
+# rather than genuinely free. Stated honestly in RESULTS.md's own
+# Limitations section and in docs/runbook.md's Fly billing note, not
+# quietly assumed.
 #
 # app name left as a placeholder: this sandbox has no Fly account and
 # cannot run `fly launch` or `fly apps create`, so the real name is

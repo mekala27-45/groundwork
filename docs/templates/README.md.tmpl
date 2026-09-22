@@ -1,29 +1,82 @@
 # groundwork
 
+[![CI](https://github.com/mekala27-45/groundwork/actions/workflows/ci.yml/badge.svg)](https://github.com/mekala27-45/groundwork/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)](web/package.json)
+[![pgvector](https://img.shields.io/badge/Postgres-pgvector-4169E1?logo=postgresql&logoColor=white)](fly.toml)
+
 A multi tenant platform that turns an uploaded PDF into a chatbot that
 answers questions grounded only in that document, with verifiable
 citations, a measured refusal for anything the document does not cover,
 and a full evaluation harness proving retrieval quality, chunking
 strategy, and answer faithfulness rather than asserting them.
 
-This build is still in progress. Every number in this section is
-rendered by `scripts/check_published_numbers.py` from a live query
-against this repository's own database and `evalset/questions.yaml`,
-never typed in by hand; see `packages/api/src/groundwork_api/claims.py`
-for exactly how, and RESULTS.md for the full evaluation writeup as it
-fills in. ARCHITECTURE.md lands at build order step 26.
+**Live demo:** https://mekala27-45.github.io/groundwork/ (three seeded
+workspaces, nothing to upload or configure first)
+**Run it yourself:** docs/runbook.md
+**Full evaluation report:** RESULTS.md
+
+![groundwork demo: asking a question in the seeded Meridian Coaching workspace, opening the full trace for that answer, and the evaluation dashboard](docs/demo.gif)
+
+The recording above is a real browser driving a real running instance,
+not a mockup: asking a question against the seeded Meridian Coaching
+workspace, opening `/trace` for the answer it returns (retrieved chunks,
+the answer, its split claims, and citation verification), then the
+`/eval` dashboard. Reproduce it yourself with `scripts/record_demo.py`.
 
 ## Current state
+
+Every number below is rendered by `scripts/check_published_numbers.py`
+from a live query against this repository's own database and
+`evalset/questions.yaml`, never typed in by hand; see
+`packages/api/src/groundwork_api/claims.py` for exactly how.
 
 - Demo workspaces seeded: {{workspace_count}}
 - Documents indexed: {{document_count}}
 - Chunks stored: {{naive_chunk_count}} naive, {{structure_chunk_count}} structure aware
 - Golden evaluation set: {{eval_question_count}} questions ({{eval_category_counts}})
-- Retrieval evaluation harness: {{retrieval_metrics_status}}
-- Faithfulness, isolation, and red team scorecard: {{red_team_status}}
+- Retrieval evaluation harness: {{retrieval_metrics_status}}, both chunking strategies scored with and without reranking
+- Prompt injection red team: {{injection_pass_count}} of {{injection_total_count}} passed
+- Workspace isolation red team: {{workspace_isolation_pass_count}} of {{workspace_isolation_total_count}} passed
+- Out of scope refusal: {{out_of_scope_pass_count}} of {{out_of_scope_total_count}} passed, a real and unflattering number, explained in full in RESULTS.md rather than tuned away
 
-Full setup, deployment, and usage instructions land here once the API
-and web app are built and deployed (build order steps 19 through 27).
+That last line is there on purpose. A relevance gate built for an
+environment with no reachable embedding model or LLM key cannot reliably
+tell an out-of-scope question from an in-scope one under a lexical
+fallback, and RESULTS.md reports that plainly, with every failing case
+shown, instead of adjusting a threshold until this one evaluation set
+happens to score better.
+
+## Architecture
+
+Extract, chunk two ways, embed, index, retrieve, rerank, gate on
+relevance, generate, then verify independently of the model that
+answered: split each claim, check it against its cited chunk with a
+model that never sees the generator's own reasoning, and confirm the
+citation is real. See ARCHITECTURE.md for the full system design,
+docs/chunking.md for the two chunking strategies compared head to head,
+docs/faithfulness.md for how an answer is checked without trusting the
+model that wrote it, and docs/security.md for the threat model,
+including a real prompt injection defense measured against a planted
+attack, not merely described.
+
+## Stack
+
+Python 3.12, FastAPI, SQLModel, Postgres with pgvector, sentence
+transformers and a cross encoder reranker (both with deterministic
+offline fallbacks), LiteLLM, Next.js 15 as a static export, TypeScript,
+Docker, Fly.io, Neon, GitHub Actions, GitHub Pages.
+
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md), system design and data flow
+- [RESULTS.md](RESULTS.md), the full evaluation report, every figure computed from stored records
+- [docs/chunking.md](docs/chunking.md), naive versus structure aware chunking, measured
+- [docs/faithfulness.md](docs/faithfulness.md), how claims are split, scored, and cited text verified
+- [docs/security.md](docs/security.md), threat model, prompt injection defense, and what remains unverified
+- [docs/runbook.md](docs/runbook.md), how to deploy and operate a real instance
+- [CONTRIBUTING.md](CONTRIBUTING.md), the development workflow that built this
 
 ## License
 

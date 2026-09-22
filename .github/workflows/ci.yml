@@ -104,7 +104,7 @@ jobs:
     # the suite to pass either way.
     services:
       postgres:
-        image: ${{ env.POSTGRES_IMAGE }}
+        image: "pgvector/pgvector:0.6.0-pg16"
         env:
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         ports:
@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: ${{ env.POSTGRES_IMAGE }}
+        image: "pgvector/pgvector:0.6.0-pg16"
         env:
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         ports:

@@ -52,7 +52,9 @@ def main(argv: list[str]) -> int:
     rendered = render_all()
 
     if not rendered:
-        print("check_published_numbers: rendered nothing, refusing to report a pass", file=sys.stderr)
+        print(
+            "check_published_numbers: rendered nothing, refusing to report a pass", file=sys.stderr
+        )
         return 1
 
     if write:

@@ -30,14 +30,38 @@ EM_DASH = chr(0x2014)  # built from its code point, deliberately, so this
 # file does not itself contain the literal character it exists to forbid
 
 SCAN_SUFFIXES = {
-    ".py", ".md", ".mdx", ".txt", ".toml", ".yaml", ".yml", ".json",
-    ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".sql",
+    ".py",
+    ".md",
+    ".mdx",
+    ".txt",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".css",
+    ".html",
+    ".sql",
 }
 
 EXCLUDE_DIRS = {
-    ".git", ".venv", "node_modules", "__pycache__", ".ruff_cache",
-    ".mypy_cache", ".pytest_cache", ".next", "out", "htmlcov",
-    "dist", "build", ".hf_cache", "models_cache",
+    ".git",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".next",
+    "out",
+    "htmlcov",
+    "dist",
+    "build",
+    ".hf_cache",
+    "models_cache",
 }
 
 # Binary or generated files we never want to scan even if their suffix
@@ -87,7 +111,9 @@ def main(argv: list[str]) -> int:
             all_files.extend(iter_files(root))
 
     if not all_files:
-        print("check_no_em_dash: no scannable files found, refusing to report a pass", file=sys.stderr)
+        print(
+            "check_no_em_dash: no scannable files found, refusing to report a pass", file=sys.stderr
+        )
         return 1
 
     hits = scan(all_files)

@@ -4,6 +4,7 @@ import type {
   ConversationOut,
   ErrorOut,
   EvalRunOut,
+  FaithfulnessScorecardOut,
   RedTeamResultOut,
   TurnOut,
   WorkspaceDetailOut,
@@ -118,4 +119,8 @@ export function listEvalRuns(): Promise<EvalRunOut[]> {
 
 export function listRedTeamResults(): Promise<RedTeamResultOut[]> {
   return request<RedTeamResultOut[]>("/eval/red-team-results");
+}
+
+export function getFaithfulnessScorecard(): Promise<FaithfulnessScorecardOut> {
+  return request<FaithfulnessScorecardOut>("/eval/faithfulness");
 }

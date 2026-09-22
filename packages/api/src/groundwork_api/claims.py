@@ -164,7 +164,7 @@ def _format_boundary_comparison_table(runs: list[EvalRun], workspace_names: dict
     return "\n".join(lines)
 
 
-def _faithfulness_claim_counts(turns: list[Turn]) -> dict[str, int]:
+def faithfulness_claim_counts(turns: list[Turn]) -> dict[str, int]:
     counts = {"entailed": 0, "contradicted": 0, "unsupported": 0}
     for turn in turns:
         for claim in turn.claims:
@@ -315,7 +315,7 @@ async def build_manifest(session: AsyncSession) -> dict[str, Any]:
     # ones; see scripts/seed_demo_workspaces.py's own cascade delete.
     turns = list((await session.execute(select(Turn))).scalars().all())
     manifest["turn_count"] = len(turns)
-    faithfulness_counts = _faithfulness_claim_counts(turns)
+    faithfulness_counts = faithfulness_claim_counts(turns)
     manifest["faithfulness_claim_count"] = sum(faithfulness_counts.values())
     manifest["faithfulness_entailed_count"] = faithfulness_counts["entailed"]
     manifest["faithfulness_contradicted_count"] = faithfulness_counts["contradicted"]

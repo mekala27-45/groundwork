@@ -114,6 +114,13 @@ export interface RedTeamResultOut {
   turn_id: string | null;
 }
 
+export interface FaithfulnessScorecardOut {
+  entailed_count: number;
+  contradicted_count: number;
+  unsupported_count: number;
+  total_count: number;
+}
+
 export interface ErrorOut {
   detail: string;
 }

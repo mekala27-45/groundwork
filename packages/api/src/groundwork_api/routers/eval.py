@@ -24,6 +24,18 @@ one run exists.
 An explicit ?run_id= still returns that exact run's rows, unfiltered by
 latest, so a specific historical run stays inspectable rather than
 permanently hidden the moment a newer one exists.
+
+GET /eval/faithfulness is the one exception to "nothing here computes a
+number": the faithfulness scorecard was never a stored row anywhere,
+only something claims.py computes at RESULTS.md render time by iterating
+every Turn's claims (build order step 23's web app work found no way for
+the eval page to get this number at all otherwise, since there is no
+endpoint that lists Turn rows in bulk, by design, see routers/turns'
+absence). Reuses claims.py's own faithfulness_claim_counts against the
+same query, so the web page and RESULTS.md can never disagree about
+what counts as entailed, contradicted, or unsupported. Not scoped to a
+run_id, matching build_manifest()'s own reasoning: Turn has no run_id
+column at all.
 """
 
 from __future__ import annotations
@@ -35,10 +47,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from groundwork_api.claims import latest_eval_run_id, latest_red_team_run_id
+from groundwork_api.claims import (
+    faithfulness_claim_counts,
+    latest_eval_run_id,
+    latest_red_team_run_id,
+)
 from groundwork_api.deps import get_session
-from groundwork_api.models import EvalRun, RedTeamResult
-from groundwork_api.schemas import EvalRunOut, RedTeamResultOut
+from groundwork_api.models import EvalRun, RedTeamResult, Turn
+from groundwork_api.schemas import EvalRunOut, FaithfulnessScorecardOut, RedTeamResultOut
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
@@ -65,3 +81,17 @@ async def list_red_team_results(
         statement = statement.where(col(RedTeamResult.run_id) == target_run_id)
     result = await session.execute(statement)
     return list(result.scalars())
+
+
+@router.get("/faithfulness", response_model=FaithfulnessScorecardOut)
+async def get_faithfulness_scorecard(
+    session: AsyncSession = Depends(get_session),
+) -> FaithfulnessScorecardOut:
+    turns = list((await session.execute(select(Turn))).scalars().all())
+    counts = faithfulness_claim_counts(turns)
+    return FaithfulnessScorecardOut(
+        entailed_count=counts["entailed"],
+        contradicted_count=counts["contradicted"],
+        unsupported_count=counts["unsupported"],
+        total_count=sum(counts.values()),
+    )

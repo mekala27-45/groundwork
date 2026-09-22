@@ -29,6 +29,27 @@ async def _seed_workspace(session: AsyncSession) -> Workspace:
     return workspace
 
 
+async def _seed_turn_with_claims(
+    session: AsyncSession, workspace: Workspace, *, nli_labels: list[str]
+) -> Turn:
+    conversation = Conversation(workspace_id=workspace.id)
+    session.add(conversation)
+    await session.flush()
+    turn = Turn(
+        conversation_id=conversation.id,
+        workspace_id=workspace.id,
+        question="a question",
+        answer="an answer",
+        claims=[
+            {"text": f"claim {i}", "cited_chunk_id": None, "nli_label": label, "score": 1.0}
+            for i, label in enumerate(nli_labels)
+        ],
+    )
+    session.add(turn)
+    await session.commit()
+    return turn
+
+
 async def test_list_eval_runs_is_empty_with_nothing_seeded(client: AsyncClient) -> None:
     response = await client.get("/eval/runs")
     assert response.status_code == 200
@@ -225,3 +246,40 @@ async def test_list_red_team_results_defaults_to_the_latest_run_only(
         "/eval/red-team-results", params={"run_id": str(stale_run_id)}
     )
     assert [row["case_id"] for row in all_via_explicit_id.json()] == ["case-stale"]
+
+
+async def test_faithfulness_scorecard_is_all_zero_with_nothing_seeded(
+    client: AsyncClient,
+) -> None:
+    response = await client.get("/eval/faithfulness")
+    assert response.status_code == 200
+    assert response.json() == {
+        "entailed_count": 0,
+        "contradicted_count": 0,
+        "unsupported_count": 0,
+        "total_count": 0,
+    }
+
+
+async def test_faithfulness_scorecard_counts_claims_across_every_turn(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """The /eval page's only source for this number: proves it matches
+    claims.py's own faithfulness_claim_counts exactly, counting across
+    every turn's claims, not just the latest one.
+    """
+    workspace = await _seed_workspace(db_session)
+    await _seed_turn_with_claims(db_session, workspace, nli_labels=["entailed", "entailed"])
+    await _seed_turn_with_claims(
+        db_session, workspace, nli_labels=["contradicted", "unsupported", "entailed"]
+    )
+
+    response = await client.get("/eval/faithfulness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "entailed_count": 3,
+        "contradicted_count": 1,
+        "unsupported_count": 1,
+        "total_count": 5,
+    }

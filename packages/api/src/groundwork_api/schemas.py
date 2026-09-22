@@ -123,6 +123,21 @@ class RedTeamResultOut(StrictModel):
     turn_id: UUID | None
 
 
+class FaithfulnessScorecardOut(StrictModel):
+    """The same three counts RESULTS.md's Faithfulness scorecard section
+    renders, computed the same way, by claims.py's own
+    faithfulness_claim_counts against every stored Turn: this schema is
+    just that function's result put on the wire for the /eval page, not a
+    second, independently maintained count that could drift from the
+    published one.
+    """
+
+    entailed_count: int
+    contradicted_count: int
+    unsupported_count: int
+    total_count: int
+
+
 class ErrorOut(StrictModel):
     detail: str
 
@@ -136,6 +151,7 @@ __all__ = [
     "DocumentOut",
     "ErrorOut",
     "EvalRunOut",
+    "FaithfulnessScorecardOut",
     "RedTeamResultOut",
     "TurnOut",
     "WorkspaceDetailOut",

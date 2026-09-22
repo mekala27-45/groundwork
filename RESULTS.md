@@ -18,33 +18,46 @@ for exactly how each one is produced.
 
 ## Retrieval metrics
 
-Status: not yet run. This section populates with
-recall@3, recall@5, precision@5, and MRR, computed separately for naive
-versus structure aware chunking, with and without reranking, once the
-retrieval evaluation harness (build order step 11) runs against the eval
-set above.
+Status: computed. Recall@3, recall@5, precision@5,
+and MRR, computed separately for naive versus structure aware chunking
+and with versus without reranking, against the golden evaluation set
+above. The harness itself is build order step 11; `scripts/run_eval.py`
+(build order step 20) is what actually runs it and persists an `EvalRun`
+row per workspace, configuration, and category. The full comparison
+table renders here at build order step 21, the commit immediately after
+this status first reads "computed".
 
 ## Chunking strategy comparison
 
-Status: not yet run. Populated alongside the retrieval
-metrics above, with the boundary spanning question category broken out
-separately, reported honestly even where naive chunking wins or ties.
+Status: computed. Naive versus structure aware
+chunking, compared on the same metrics as the retrieval table above,
+with the boundary spanning question category broken out separately and
+reported honestly even where naive chunking wins or ties. Renders here
+alongside the retrieval metrics table at build order step 21.
 
 ## Faithfulness scorecard
 
-Status: not yet run. Populated once the independent NLI
-faithfulness checker (build order step 13) runs, with contradicted
-claims counted separately from unsupported ones.
+Status: computed. Entailed, contradicted, and unsupported
+claim rates from the independent NLI faithfulness checker (build order
+step 13), contradicted counted separately from unsupported since the two
+mean different things to a reader deciding how much to trust the system.
+Renders here at build order step 21.
 
 ## Workspace isolation
 
-Status: not yet run. Populated once `test_workspace_isolation`
-(build order step 15) runs.
+Status: computed. `test_workspace_isolation` (build order
+step 15), a synthetic worst case fixture built to make a scoping bug
+want to leak, plus a second, differently shaped probe against this
+build's real seeded content, both run for real by `scripts/run_eval.py`
+(build order step 20). Renders here at build order step 21.
 
 ## Injection red team and out of scope scoring
 
-Status: not yet run. Populated once the injection defense test
-and the out of scope refusal scoring (build order steps 16 and 17) run.
+Status: computed. The injection defense test and the out of
+scope refusal scoring (build order steps 16 and 17), run for real by
+`scripts/run_eval.py` (build order step 20) against every question in
+both categories, under both chunking strategies. Renders here at build
+order step 21.
 
 ## Limitations
 

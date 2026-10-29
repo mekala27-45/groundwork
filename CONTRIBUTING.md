@@ -44,6 +44,30 @@ function that probes once and picks one. Look at
 `packages/retrieve/src/groundwork_retrieve/embeddings.py` before adding a
 new one; the shape is meant to be copied, not reinvented per component.
 
+## A real model run
+
+README.md and RESULTS.md publish the offline fallback run, the one CI
+reproduces with no key. A run with real models is published separately,
+in MODEL-RESULTS.md, and never by hand:
+
+1. Add the key once: repository settings, Secrets and variables, Actions,
+   a new repository secret named `NVIDIA_API_KEY` (a key for NVIDIA's free
+   build tier at build.nvidia.com; no card).
+2. Actions, `real model`, Run workflow. The defaults are a free answering
+   model and a judge from another family; either can be changed there.
+3. The workflow seeds a fresh database, runs the usual three steps with
+   every backend on `auto` (the runner reaches huggingface.co, so the real
+   embedding, reranking and faithfulness models load), writes the run to
+   `results/real-model/` with `scripts/record_model_run.py`, renders
+   MODEL-RESULTS.md with `scripts/render_model_results.py --write`, and
+   pushes both to a branch named `real-model-<run id>`.
+4. Read that branch and merge it. From then on the claims job holds
+   MODEL-RESULTS.md to the committed records on every push.
+
+`scripts/record_model_run.py` refuses a run in which no turn was written by
+the model, so a key that was set but never used cannot publish extractive
+numbers under a model's name.
+
 ## Tests
 
 - A new gate (anything that can pass or fail a build) needs three tests:

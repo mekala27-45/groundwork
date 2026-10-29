@@ -220,6 +220,10 @@ jobs:
         run: uv run python scripts/run_eval.py
       - name: Check every published number against a fresh render
         run: uv run python scripts/check_published_numbers.py
+      - name: Check MODEL-RESULTS.md against the committed real model records
+        # No database or key: the page is rendered from the records that
+        # .github/workflows/real-model.yml wrote and a person merged.
+        run: uv run python scripts/render_model_results.py
 
   web:
     name: web

@@ -1,0 +1,111 @@
+# The real model run: the one place this repository's evaluation runs with
+# real models, started by hand. It needs the NVIDIA_API_KEY repository
+# secret, a key for NVIDIA's free build tier (build.nvidia.com, no card),
+# and it publishes nothing by itself.
+#
+# It seeds a fresh database and runs the same three steps the claims job in
+# ci.yml runs, seed, build questions, evaluate, but leaves every backend on
+# "auto". This runner reaches huggingface.co, so the real embedding,
+# reranking and faithfulness models load, and the key turns the answering
+# model and the quality judge on. scripts/record_model_run.py then writes
+# the run to results/real-model/ (and refuses if no turn was written by the
+# model), scripts/render_model_results.py renders MODEL-RESULTS.md from every
+# record, and both go to a branch named for this run. A person reads that
+# branch and merges it; from then on ci.yml's claims job holds
+# MODEL-RESULTS.md to the committed records on every push.
+#
+# The judge defaults to a different family from the answering model, so the
+# model that wrote an answer never also grades it. Faithfulness is never the
+# judge's call: an NLI model decides it, as everywhere else in this build.
+
+name: real model
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: The answering model, as LiteLLM names it
+        required: true
+        default: nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b
+      judge_model:
+        description: The quality judge, from another family than the answering model
+        required: true
+        default: nvidia_nim/minimaxai/minimax-m3.1-flash
+
+permissions:
+  contents: write
+
+concurrency:
+  group: real-model
+  cancel-in-progress: false
+
+env:
+  POSTGRES_PASSWORD: groundwork_dev_password
+
+jobs:
+  run:
+    name: run
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        # Literal for the same reason as in ci.yml: services resolve before env exists.
+        image: "pgvector/pgvector:0.6.0-pg16"
+        env:
+          POSTGRES_PASSWORD: groundwork_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      GROUNDWORK_LLM_MODEL: ${{ inputs.model }}
+      GROUNDWORK_JUDGE_MODEL: ${{ inputs.judge_model }}
+      # LiteLLM sends the key it is handed to whichever provider the model names.
+      GROUNDWORK_LLM_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      # The build tier is free and unpriced, so every call records zero; the
+      # ceiling stays in place as the guard it is everywhere else.
+      GROUNDWORK_SPEND_CEILING_USD: "1.00"
+    steps:
+      - name: Stop unless the key is set
+        run: |
+          if [ -z "$GROUNDWORK_LLM_API_KEY" ]; then
+            echo "::error title=no key::NVIDIA_API_KEY is not set in this repository's secrets"
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-packages --dev --locked
+      - name: Create the dev database
+        run: PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql -h localhost -U postgres -c "CREATE DATABASE groundwork_dev;"
+      - name: Migrate the dev database
+        working-directory: packages/api
+        run: uv run alembic upgrade head
+      - name: Seed the demo workspaces
+        run: uv run python scripts/seed_demo_workspaces.py
+      - name: Build the evaluation question set
+        run: uv run python scripts/build_eval_questions.py
+      - name: Run the evaluation harness with the real models
+        run: uv run python scripts/run_eval.py
+      - name: Record the run
+        run: uv run python scripts/record_model_run.py
+      - name: Render MODEL-RESULTS.md from every record
+        run: uv run python scripts/render_model_results.py --write
+      - name: Push the record and the page to a branch for review
+        env:
+          MODEL: ${{ inputs.model }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="real-model-$RUN_ID"
+          git checkout -b "$branch"
+          git add results/real-model MODEL-RESULTS.md
+          git commit -m "data: real model run $RUN_ID with $MODEL"
+          git push origin "HEAD:refs/heads/$branch"
+          echo "::notice title=review-branch::$branch"

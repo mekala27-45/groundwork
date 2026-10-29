@@ -106,3 +106,26 @@ def test_empty_answer_returns_no_claims() -> None:
 
 def test_whitespace_only_answer_returns_no_claims() -> None:
     assert split_claims("   \n\n  ", CHUNK_IDS) == []
+
+
+# -- cited_by_markers ----------------------------------------------------
+
+
+def test_cited_by_markers_returns_only_the_passages_the_answer_names() -> None:
+    from groundwork_verify.split import cited_by_markers
+
+    answer = "Sessions run fifty minutes. [2] They are held by video call. [2] Fees are listed. [1]"
+
+    assert cited_by_markers(answer, CHUNK_IDS) == [CHUNK_IDS[1], CHUNK_IDS[0]]
+
+
+def test_cited_by_markers_finds_nothing_in_a_refusal() -> None:
+    from groundwork_verify.split import cited_by_markers
+
+    assert cited_by_markers("This document does not cover that question.", CHUNK_IDS) == []
+
+
+def test_cited_by_markers_skips_a_marker_outside_the_offered_range() -> None:
+    from groundwork_verify.split import cited_by_markers
+
+    assert cited_by_markers("A claim. [7] Another. [0] A third. [3]", CHUNK_IDS) == [CHUNK_IDS[2]]

@@ -63,6 +63,7 @@ from groundwork_verify.faithfulness import (
     check_faithfulness,
 )
 from groundwork_verify.quality import Judge, QualityScore, score_reply_quality
+from groundwork_verify.split import cited_by_markers
 
 
 class ConversationNotFoundError(ValueError):
@@ -244,9 +245,17 @@ async def ask(
     )
 
     chunk_by_id = {chunk.id: chunk for chunk in generation_chunks}
-    cited_chunks = [
+    offered_chunks = [
         chunk_by_id[chunk_id] for chunk_id in generation.cited_chunk_ids if chunk_id in chunk_by_id
     ]
+    # The extractive path quotes exactly the chunk it names. A model is
+    # offered every passage and cites some by marker, so what it cites is
+    # what its markers name, and a refusal cites nothing.
+    cited_chunks = (
+        offered_chunks
+        if generation.extractive_fallback
+        else cited_by_markers(generation.answer, offered_chunks)
+    )
     citation_verifications = await verify_citations(
         session, workspace_id=workspace_id, cited_chunks=cited_chunks
     )

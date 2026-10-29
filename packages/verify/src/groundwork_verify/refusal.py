@@ -11,14 +11,19 @@ from, groundwork_api.chat.ask's relevance gate, an empty retrieval
 result, or a real LLM asked about chunks it was never given, already
 funnels through groundwork_generate.generate.NOT_COVERED_MESSAGE, the one
 fixed string, so exact equality against it is the correct check, not a
-softer one. The one gap this does not close: a real LLM shown chunks it
-judges insufficient (the system prompt's own free-form "say plainly that
-the document does not cover this question" instruction, section 9) can
-phrase that refusal any number of ways, none of them this exact string,
-and this function would not recognize it. This sandbox has no LLM key to
-exercise that path at all, so the gap is real but unmeasured here;
-RESULTS.md and docs/security.md say so rather than implying it was
-checked.
+softer one.
+
+A real model shown passages that do not answer the question used to be the
+gap: told only to "say plainly" that the document does not cover it, it
+could word that any number of ways, and every passage it was offered was
+counted as cited, so a model refusal could never pass. Both are closed on
+the model path now. The system prompt tells the model to reply with exactly
+NOT_COVERED_MESSAGE and nothing else, and groundwork_api.chat.ask counts as
+cited only the passages the model's markers name, so a refusal cites
+nothing. The check itself stays exact: a model that paraphrases the
+refusal anyway fails it, on purpose, since a softer match would also pass a
+confident wrong answer that happens to apologize. MODEL-RESULTS.md reports
+how the real model runs scored against it.
 """
 
 from __future__ import annotations

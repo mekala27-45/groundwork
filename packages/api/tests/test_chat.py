@@ -402,3 +402,84 @@ async def test_ask_leaves_judge_scores_none_with_no_judge_and_no_key(
     )
 
     assert turn.judge_scores is None
+
+
+class _FixedModelGenerator:
+    """Answers the way a real model would, without a network call: the
+    passages it was offered come back as cited_chunk_ids, in order, and
+    the answer names some of them by marker, or none in a refusal."""
+
+    def __init__(self, answer: str) -> None:
+        self._answer = answer
+
+    async def generate(self, question: str, chunks: list[Chunk]) -> GenerationResult:
+        return GenerationResult(
+            answer=self._answer,
+            extractive_fallback=False,
+            cited_chunk_ids=[chunk.id for chunk in chunks],
+            latency_ms=1.0,
+            cost_usd=0.0,
+        )
+
+
+async def _seed_second_chunk(session: AsyncSession, first: Chunk, text: str) -> Chunk:
+    chunk = Chunk(
+        document_id=first.document_id,
+        workspace_id=first.workspace_id,
+        strategy=ChunkStrategy.NAIVE,
+        text=text,
+        page_start=2,
+        page_end=2,
+        char_start=0,
+        char_end=len(text),
+        embedding=_vec(0.9, 0.1),
+        embedding_backend="tfidf",
+    )
+    session.add(chunk)
+    await session.commit()
+    return chunk
+
+
+async def test_a_model_answer_cites_only_the_passages_its_markers_name(
+    db_session: AsyncSession,
+) -> None:
+    workspace, first = await _seed_workspace_with_chunk(
+        db_session, text="Sessions run fifty minutes."
+    )
+    second = await _seed_second_chunk(db_session, first, "Fees are four hundred fifty dollars.")
+    conversation = await _seed_conversation(db_session, workspace)
+
+    turn = await ask(
+        db_session,
+        conversation_id=conversation.id,
+        question="What does the program cost?",
+        strategy=ChunkStrategy.NAIVE,
+        embedder=_StubEmbedder(_vec(1.0, 0.0)),
+        generator=_FixedModelGenerator("The program costs four hundred fifty dollars. [2]"),
+    )
+
+    assert len(turn.retrieved_chunk_ids) == 2
+    assert [v["chunk_id"] for v in turn.citation_verifications] == [str(second.id)]
+
+
+async def test_a_model_refusal_cites_nothing_and_passes_the_out_of_scope_check(
+    db_session: AsyncSession,
+) -> None:
+    from groundwork_generate.generate import NOT_COVERED_MESSAGE
+    from groundwork_verify.refusal import is_out_of_scope_refusal
+
+    workspace, _ = await _seed_workspace_with_chunk(db_session, text="Sessions run fifty minutes.")
+    conversation = await _seed_conversation(db_session, workspace)
+
+    turn = await ask(
+        db_session,
+        conversation_id=conversation.id,
+        question="What is the capital of France?",
+        strategy=ChunkStrategy.NAIVE,
+        embedder=_StubEmbedder(_vec(1.0, 0.0)),
+        generator=_FixedModelGenerator(NOT_COVERED_MESSAGE),
+    )
+
+    assert turn.extractive_fallback is False
+    assert turn.citation_verifications == []
+    assert is_out_of_scope_refusal(turn.answer, cited_chunk_count=len(turn.citation_verifications))

@@ -88,3 +88,25 @@ def split_claims(answer: str, cited_chunk_ids: list[UUID]) -> list[Claim]:
         claims.append(Claim(text=text, cited_chunk_id=cited_chunk_id))
     claims.reverse()
     return claims
+
+
+def cited_by_markers[T](answer: str, offered: list[T]) -> list[T]:
+    """What a written answer actually cites: the offered passages its [N]
+    markers name, each once, in the order the answer first cites them.
+
+    A model is offered every retrieved passage but cites only some, and a
+    refusal cites none. Counting every offered passage as cited would make
+    each model refusal look like an answer with citations, so the out of
+    scope check (no citation, exactly the refusal sentence) could never
+    pass on the model path however well the model behaved. A marker outside
+    the offered range names nothing and is skipped here; split_claims
+    already reports the claim it was attached to as uncited.
+    """
+    cited: list[T] = []
+    seen: set[int] = set()
+    for marker in _CITATION_MARKER.findall(answer):
+        index = int(marker) - 1
+        if 0 <= index < len(offered) and index not in seen:
+            seen.add(index)
+            cited.append(offered[index])
+    return cited

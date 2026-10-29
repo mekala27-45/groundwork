@@ -53,7 +53,13 @@ from pydantic import Field, ValidationError
 
 from groundwork_core.config import get_settings
 from groundwork_core.model import StrictModel
-from groundwork_generate.ledger import SpendLedger, get_ledger
+from groundwork_generate.ledger import (
+    CALL_RETRIES,
+    CALL_TIMEOUT_S,
+    SpendLedger,
+    get_ledger,
+    response_cost,
+)
 
 QualityBackend = Literal["litellm_judge", "unavailable"]
 
@@ -201,14 +207,23 @@ class LiteLLMJudge:
             if not self._ledger.has_budget():
                 return None
 
-            response = await litellm.acompletion(
-                model=self._model,
-                api_key=self._api_key,
-                messages=messages,
-                tools=tools,
-                tool_choice=tool_choice,
-            )
-            cost_usd = float(litellm.completion_cost(completion_response=response) or 0.0)
+            try:
+                response = await litellm.acompletion(
+                    model=self._model,
+                    api_key=self._api_key,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    num_retries=CALL_RETRIES,
+                    timeout=CALL_TIMEOUT_S,
+                )
+            except Exception:  # noqa: BLE001  a provider that refuses is a missing score, not a crash
+                # A hosted model can refuse a forced tool call, or a free tier can
+                # still be rate limiting after every retry. The judge is secondary
+                # by design: the turn keeps its answer and its faithfulness checks,
+                # and records that no quality score was produced.
+                return None
+            cost_usd = response_cost(response)
             self._ledger.record(cost_usd)
 
             message = response.choices[0].message

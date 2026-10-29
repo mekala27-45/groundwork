@@ -263,3 +263,80 @@ async def test_litellm_generator_answers_with_a_real_model_call() -> None:
     assert result.extractive_fallback is False
     assert result.answer
     assert result.cited_chunk_ids == [chunk.id]
+
+
+# -- the free hosted model path ------------------------------------------
+
+
+def test_system_prompt_names_the_exact_refusal_sentence() -> None:
+    """The out of scope check accepts exactly NOT_COVERED_MESSAGE, so the
+    model is told to use exactly that sentence, not to paraphrase it."""
+    assert (
+        f"reply with exactly this sentence and nothing else, with no citation: {NOT_COVERED_MESSAGE}"
+        in (GENERATION_SYSTEM_PROMPT)
+    )
+
+
+class _FakeChoice:
+    def __init__(self, content: str) -> None:
+        self.message = type("Message", (), {"content": content})()
+
+
+class _FakeResponse:
+    def __init__(self, content: str) -> None:
+        self.choices = [_FakeChoice(content)]
+
+
+class _FakeLiteLLM:
+    """Stands in for the litellm module: records what each call asked for,
+    and prices it the way LiteLLM prices a model missing from its map."""
+
+    def __init__(self, *, price: float | None) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._price = price
+
+    async def acompletion(self, **kwargs: object) -> _FakeResponse:
+        self.calls.append(kwargs)
+        return _FakeResponse("Sessions run fifty minutes. [1]")
+
+    def completion_cost(self, completion_response: object) -> float:
+        if self._price is None:
+            raise ValueError("This model isn't mapped yet.")
+        return self._price
+
+
+async def test_an_unpriced_model_costs_zero_instead_of_ending_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    fake = _FakeLiteLLM(price=None)
+    monkeypatch.setitem(sys.modules, "litellm", fake)
+    ledger = SpendLedger(ceiling_usd=1.00)
+    generator = LiteLLMGenerator(model="nvidia_nim/example/free-model", ledger=ledger)
+
+    result = await generator.generate(
+        "How long is a session?", [_chunk("Sessions run fifty minutes.")]
+    )
+
+    assert result.extractive_fallback is False
+    assert result.answer == "Sessions run fifty minutes. [1]"
+    assert result.cost_usd == 0.0
+    assert ledger.spent_usd == 0.0
+    assert fake.calls[0]["num_retries"] == 3
+    assert fake.calls[0]["timeout"] == 120.0
+
+
+async def test_a_priced_model_still_records_its_real_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    monkeypatch.setitem(sys.modules, "litellm", _FakeLiteLLM(price=0.0125))
+    ledger = SpendLedger(ceiling_usd=1.00)
+    generator = LiteLLMGenerator(model="gpt-4o-mini", ledger=ledger)
+
+    result = await generator.generate(
+        "How long is a session?", [_chunk("Sessions run fifty minutes.")]
+    )
+
+    assert result.cost_usd == 0.0125
+    assert ledger.spent_usd == 0.0125

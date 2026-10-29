@@ -178,3 +178,34 @@ async def test_litellm_judge_scores_a_reply_with_a_real_model_call() -> None:
     assert 1 <= result.clarity <= 5
     assert 1 <= result.helpfulness <= 5
     assert result.rationale
+
+
+# -- a hosted judge that refuses -----------------------------------------
+
+
+class _RefusingLiteLLM:
+    """Stands in for the litellm module the way a hosted model behaves when
+    it does not support a forced tool call: the request itself fails."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def acompletion(self, **kwargs: object) -> object:
+        self.calls += 1
+        raise RuntimeError("tool_choice is not supported for this model")
+
+    def completion_cost(self, completion_response: object) -> float:
+        raise AssertionError("no cost to price: the call never returned")
+
+
+async def test_a_judge_the_provider_refuses_records_no_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    fake = _RefusingLiteLLM()
+    monkeypatch.setitem(sys.modules, "litellm", fake)
+    judge = LiteLLMJudge(model="nvidia_nim/example/judge", ledger=SpendLedger(ceiling_usd=1.00))
+
+    assert await judge.score("How long is a session?", "Sessions run fifty minutes. [1]") is None
+    assert fake.calls == 1

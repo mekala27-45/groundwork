@@ -62,3 +62,28 @@ def get_ledger() -> SpendLedger:
 def reset_ledger_cache() -> None:
     """Test-only: clear the cached ledger instance."""
     get_ledger.cache_clear()
+
+
+CALL_RETRIES = 3
+"""How many times LiteLLM retries one call on a transient failure (a rate
+limit, a timeout, a 5xx) before the error reaches the caller. Free model
+tiers answer a burst with 429s rather than queueing it."""
+
+CALL_TIMEOUT_S = 120.0
+"""How long one call may wait for a reply. A free tier can hold a request
+in its queue for a minute or more; past this, the retry above takes over."""
+
+
+def response_cost(response: object) -> float:
+    """The cost LiteLLM reports for a completed call, or 0.0 when it has no
+    price for the model. Free hosted models (NVIDIA's build tier among them)
+    are not in LiteLLM's price map, and completion_cost raises for an
+    unmapped model rather than returning nothing, which would otherwise end
+    a run on its first successful reply. Zero is the true price on those
+    tiers; a priced model still reports its real cost here."""
+    import litellm
+
+    try:
+        return float(litellm.completion_cost(completion_response=response) or 0.0)
+    except Exception:  # noqa: BLE001  an unpriced model is not an error
+        return 0.0
